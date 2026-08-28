@@ -10,10 +10,16 @@ import Users from './components/Admin/Users';
 import Settings from './components/Admin/Settings';
 import Billing from './components/Cashier/Billing';
 import SearchMedicine from './components/Cashier/SearchMedicine';
+import SetupWizard from './components/Common/SetupWizard';
 
 function App() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = React.useState('dashboard');
+  const [showSetup, setShowSetup] = React.useState(!localStorage.getItem('setup_complete'));
+
+  if (showSetup) {
+    return <SetupWizard onComplete={() => setShowSetup(false)} />;
+  }
 
   if (loading) {
     return (

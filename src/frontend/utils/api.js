@@ -1,6 +1,12 @@
-const API_BASE = window.location.hostname === 'localhost'
-  ? 'http://localhost:3000/api'
-  : '/api';
+function getApiBase() {
+  const serverIp = localStorage.getItem('server_ip');
+  if (serverIp) {
+    return `http://${serverIp}:3000/api`;
+  }
+  return window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : '/api';
+}
 
 class ApiClient {
   getToken() {
@@ -15,7 +21,7 @@ class ApiClient {
     const config = { method, headers };
     if (body) config.body = JSON.stringify(body);
 
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const response = await fetch(`${getApiBase()}${endpoint}`, config);
     let data;
     try {
       data = await response.json();

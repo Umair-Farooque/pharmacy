@@ -1,13 +1,45 @@
-const pool = require('./connection');
+const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
 
-async function migrate() {
-  const conn = await pool.getConnection();
+async function autoSetup() {
+  const dbName = process.env.DB_NAME || 'pharmacy_db';
+  
+  const connectionWithoutDb = await mysql.createConnection({
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: parseInt(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+  });
+
   try {
-    await conn.query('SET FOREIGN_KEY_CHECKS=0');
+    await connectionWithoutDb.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+    console.log(`[SETUP] Database '${dbName}' ensured`);
+  } finally {
+    await connectionWithoutDb.end();
+  }
 
-    await conn.query(`
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || '127.0.0.1',
+    port: parseInt(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: dbName,
+    multipleStatements: true,
+  });
+
+  const run = async (sql, msg) => {
+    try {
+      await connection.query(sql);
+      if (msg) console.log(`[SETUP] ${msg}`);
+    } catch (err) {
+      console.warn(`[SETUP] ${msg} - ${err.message}`);
+    }
+  };
+
+  try {
+    await run(`
       CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         username VARCHAR(50) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         role ENUM('ADMIN','CASHIER') NOT NULL,
@@ -17,79 +49,81 @@ async function migrate() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_login DATETIME
       )
-    `);
+    `, 'users table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS racks (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         rack_code VARCHAR(20) UNIQUE NOT NULL,
         description VARCHAR(100)
       )
-    `);
+    `, 'racks table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS suppliers (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(100) NOT NULL,
         contact VARCHAR(50),
         address VARCHAR(200)
       )
-    `);
+    `, 'suppliers table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS customers (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(100),
         phone VARCHAR(20),
         credit_balance DECIMAL(10,2) DEFAULT 0
       )
-    `);
+    `, 'customers table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS medicines (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         name VARCHAR(150) NOT NULL,
         generic_name VARCHAR(150),
         category VARCHAR(50),
         manufacturer VARCHAR(100),
-        rack_id INTEGER,
-        pack_size INTEGER,
-        reorder_level INTEGER DEFAULT 10,
+        rack_id INT,
+        pack_size INT,
+        reorder_level INT DEFAULT 10,
         tax_rate DECIMAL(5,2) DEFAULT 0,
         barcode VARCHAR(50) UNIQUE,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        created_by INTEGER,
+        created_by INT,
         FOREIGN KEY (rack_id) REFERENCES racks(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
       )
-    `);
-    await conn.query(`CREATE INDEX idx_medicine_name ON medicines(name)`).catch(() => {});
-    await conn.query(`CREATE INDEX idx_medicine_barcode ON medicines(barcode)`).catch(() => {});
+    `, 'medicines table created');
 
-    await conn.query(`
+    await run(`CREATE INDEX idx_medicine_name ON medicines(name)`, 'idx_medicine_name');
+    await run(`CREATE INDEX idx_medicine_barcode ON medicines(barcode)`, 'idx_medicine_barcode');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS stock_batches (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        medicine_id INTEGER NOT NULL,
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        medicine_id INT NOT NULL,
         batch_no VARCHAR(50),
-        supplier_id INTEGER,
+        supplier_id INT,
         purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
         selling_rate_per_unit DECIMAL(10,2) NOT NULL,
-        quantity_received INTEGER NOT NULL,
-        quantity_in_stock INTEGER NOT NULL,
+        quantity_received INT NOT NULL,
+        quantity_in_stock INT NOT NULL,
         expiry_date DATE,
         purchase_date DATE DEFAULT (CURRENT_DATE),
-        created_by INTEGER,
+        created_by INT,
         FOREIGN KEY (medicine_id) REFERENCES medicines(id),
         FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
         FOREIGN KEY (created_by) REFERENCES users(id)
       )
-    `);
-    await conn.query(`CREATE INDEX idx_batch_medicine ON stock_batches(medicine_id)`).catch(() => {});
-    await conn.query(`CREATE INDEX idx_batch_expiry ON stock_batches(expiry_date)`).catch(() => {});
+    `, 'stock_batches table created');
 
-    await conn.query(`
+    await run(`CREATE INDEX idx_batch_medicine ON stock_batches(medicine_id)`, 'idx_batch_medicine');
+    await run(`CREATE INDEX idx_batch_expiry ON stock_batches(expiry_date)`, 'idx_batch_expiry');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS sales (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
+        id INT PRIMARY KEY AUTO_INCREMENT,
         bill_number VARCHAR(20) UNIQUE NOT NULL,
         subtotal DECIMAL(10,2) NOT NULL,
         discount_type ENUM('PERCENTAGE','FIXED'),
@@ -98,23 +132,24 @@ async function migrate() {
         tax_amount DECIMAL(10,2) DEFAULT 0,
         final_amount DECIMAL(10,2) NOT NULL,
         payment_method ENUM('CASH','CARD','UPI','CREDIT') DEFAULT 'CASH',
-        customer_id INTEGER,
-        cashier_id INTEGER NOT NULL,
+        customer_id INT,
+        cashier_id INT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (cashier_id) REFERENCES users(id),
         FOREIGN KEY (customer_id) REFERENCES customers(id)
       )
-    `);
-    await conn.query(`CREATE INDEX idx_sales_date ON sales(created_at)`).catch(() => {});
-    await conn.query(`CREATE INDEX idx_sales_cashier ON sales(cashier_id)`).catch(() => {});
+    `, 'sales table created');
 
-    await conn.query(`
+    await run(`CREATE INDEX idx_sales_date ON sales(created_at)`, 'idx_sales_date');
+    await run(`CREATE INDEX idx_sales_cashier ON sales(cashier_id)`, 'idx_sales_cashier');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS sale_items (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        sale_id INTEGER NOT NULL,
-        medicine_id INTEGER NOT NULL,
-        batch_id INTEGER NOT NULL,
-        quantity INTEGER NOT NULL,
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        sale_id INT NOT NULL,
+        medicine_id INT NOT NULL,
+        batch_id INT NOT NULL,
+        quantity INT NOT NULL,
         purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
         selling_rate_per_unit DECIMAL(10,2) NOT NULL,
         line_total DECIMAL(10,2) NOT NULL,
@@ -123,73 +158,80 @@ async function migrate() {
         FOREIGN KEY (medicine_id) REFERENCES medicines(id),
         FOREIGN KEY (batch_id) REFERENCES stock_batches(id)
       )
-    `);
-    await conn.query(`CREATE INDEX idx_sale_items_sale ON sale_items(sale_id)`).catch(() => {});
+    `, 'sale_items table created');
 
-    await conn.query(`
+    await run(`CREATE INDEX idx_sale_items_sale ON sale_items(sale_id)`, 'idx_sale_items_sale');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS stock_transactions (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        medicine_id INTEGER NOT NULL,
-        batch_id INTEGER,
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        medicine_id INT NOT NULL,
+        batch_id INT,
         transaction_type ENUM('PURCHASE','SALE','ADJUSTMENT','RETURN','EXPIRED') NOT NULL,
-        quantity_change INTEGER NOT NULL,
-        quantity_before INTEGER NOT NULL,
-        quantity_after INTEGER NOT NULL,
-        performed_by INTEGER NOT NULL,
-        reference_id INTEGER,
+        quantity_change INT NOT NULL,
+        quantity_before INT NOT NULL,
+        quantity_after INT NOT NULL,
+        performed_by INT NOT NULL,
+        reference_id INT,
         notes VARCHAR(200),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (medicine_id) REFERENCES medicines(id),
         FOREIGN KEY (batch_id) REFERENCES stock_batches(id),
         FOREIGN KEY (performed_by) REFERENCES users(id)
       )
-    `);
-    await conn.query(`CREATE INDEX idx_stock_trans_medicine ON stock_transactions(medicine_id)`).catch(() => {});
+    `, 'stock_transactions table created');
 
-    await conn.query(`
+    await run(`CREATE INDEX idx_stock_trans_medicine ON stock_transactions(medicine_id)`, 'idx_stock_trans_medicine');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS returns (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        original_sale_id INTEGER NOT NULL,
-        sale_item_id INTEGER NOT NULL,
-        quantity_returned INTEGER NOT NULL,
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        original_sale_id INT NOT NULL,
+        sale_item_id INT NOT NULL,
+        quantity_returned INT NOT NULL,
         refund_amount DECIMAL(10,2) NOT NULL,
         reason VARCHAR(200),
-        processed_by INTEGER NOT NULL,
+        processed_by INT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (original_sale_id) REFERENCES sales(id),
         FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
         FOREIGN KEY (processed_by) REFERENCES users(id)
       )
-    `);
+    `, 'returns table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS audit_log (
-        id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        user_id INTEGER NOT NULL,
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT NOT NULL,
         action VARCHAR(50) NOT NULL,
         table_affected VARCHAR(50),
-        record_id INTEGER,
+        record_id INT,
         details TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
-    `);
+    `, 'audit_log table created');
 
-    await conn.query(`
+    await run(`
       CREATE TABLE IF NOT EXISTS settings (
         \`key\` VARCHAR(50) PRIMARY KEY,
         value VARCHAR(200),
         description VARCHAR(200)
       )
-    `);
+    `, 'settings table created');
 
-    await conn.query('SET FOREIGN_KEY_CHECKS=1');
+    await run(`
+      CREATE TABLE IF NOT EXISTS sale_counter (
+        id INT PRIMARY KEY,
+        counter INT DEFAULT 0
+      )
+    `, 'sale_counter table created');
 
-    console.log('[MIGRATE] All tables created successfully.');
+    console.log('[SETUP] Tables created');
 
-    const [rows] = await conn.query("SELECT COUNT(*) as count FROM settings");
-    if (rows[0].count === 0) {
-      await conn.query(`
+    const [settingsCount] = await connection.query("SELECT COUNT(*) as count FROM settings");
+    if (settingsCount[0].count === 0) {
+      await connection.query(`
         INSERT INTO settings (\`key\`, value, description) VALUES
           ('server_ip', '192.168.1.100', 'Server IP address'),
           ('server_port', '3000', 'API server port'),
@@ -204,26 +246,28 @@ async function migrate() {
           ('low_stock_alert_default', '10', 'Default low-stock threshold'),
           ('expiry_alert_days', '60', 'Warn this many days before expiry')
       `);
-      console.log('[MIGRATE] Default settings inserted.');
+      console.log('[SETUP] Default settings inserted');
     }
 
-    const [adminRows] = await conn.query("SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN'");
-    if (adminRows[0].count === 0) {
-      const bcrypt = require('bcryptjs');
+    const [adminCount] = await connection.query("SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN'");
+    if (adminCount[0].count === 0) {
       const hash = await bcrypt.hash('admin123', 10);
-      await conn.query(
+      await connection.query(
         "INSERT INTO users (username, password_hash, role, full_name) VALUES (?, ?, 'ADMIN', ?)",
         ['admin', hash, 'Administrator']
       );
-      console.log('[MIGRATE] Default admin created (username: admin, password: admin123)');
+      console.log('[SETUP] Default admin created (username: admin, password: admin123)');
     }
 
-  } catch (err) {
-    console.error('[MIGRATE] Error:', err.message);
+    const [counterCount] = await connection.query("SELECT COUNT(*) as count FROM sale_counter");
+    if (counterCount[0].count === 0) {
+      await connection.query("INSERT INTO sale_counter (id, counter) VALUES (1, 0)");
+    }
+
+    console.log('[SETUP] Database setup complete');
   } finally {
-    conn.release();
-    process.exit(0);
+    await connection.end();
   }
 }
 
-migrate();
+module.exports = autoSetup;

@@ -17,16 +17,18 @@ async function getDashboard(req, res) {
 
     const [lowStockCount] = await db.query(`
       SELECT COUNT(*) as count FROM (
-        SELECT m.id FROM medicines m
+        SELECT m.id, SUM(sb.quantity_in_stock) as total_stock, MAX(m.reorder_level) as reorder_level
+        FROM medicines m
         LEFT JOIN stock_batches sb ON m.id = sb.medicine_id AND sb.quantity_in_stock > 0
-        GROUP BY m.id HAVING COALESCE(SUM(sb.quantity_in_stock), 0) <= m.reorder_level
+        GROUP BY m.id
+        HAVING COALESCE(total_stock, 0) <= reorder_level
       ) t
     `);
 
     const [expiringCount] = await db.query(`
       SELECT COUNT(*) as count FROM stock_batches
       WHERE quantity_in_stock > 0 AND expiry_date IS NOT NULL
-        AND expiry_date <= date('now', '+60 days')
+        AND expiry_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY)
     `);
 
     const [recentSales] = await db.query(`
@@ -40,7 +42,7 @@ async function getDashboard(req, res) {
       FROM sale_items si
       JOIN medicines m ON si.medicine_id = m.id
       JOIN sales s ON si.sale_id = s.id
-      WHERE DATE(s.created_at) >= date('now', '-30 days')
+      WHERE DATE(s.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
       GROUP BY si.medicine_id ORDER BY total_qty DESC LIMIT 5
     `);
 

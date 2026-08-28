@@ -1,9 +1,35 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 
 let mainWindow;
 let serverProcess;
+
+function getConfigPath() {
+  const isProd = app.isPackaged;
+  if (isProd) {
+    return path.join(app.getPath('userData'), 'config.env');
+  }
+  return path.join(__dirname, '.env');
+}
+
+function loadConfig() {
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    const content = fs.readFileSync(configPath, 'utf8');
+    content.split('\n').forEach(line => {
+      const [key, ...valueParts] = line.split('=');
+      if (key && valueParts.length) {
+        process.env[key.trim()] = valueParts.join('=').trim();
+      }
+    });
+  }
+}
+
+function isServerMode() {
+  return process.env.USE_MYSQL === 'true';
+}
 
 function startServer() {
   const isProd = app.isPackaged;
@@ -25,7 +51,7 @@ function startServer() {
   });
 }
 
-function waitForServer(url, timeout = 15000) {
+function waitForServer(url, timeout = 20000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
@@ -54,11 +80,7 @@ function createWindow() {
     },
   });
 
-  if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:3000');
-  } else {
-    mainWindow.loadURL('http://localhost:3000');
-  }
+  mainWindow.loadURL('http://localhost:3000');
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDesc) => {
     console.error('[ELECTRON] Failed to load:', errorCode, errorDesc);
@@ -70,13 +92,21 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  startServer();
-  try {
-    await waitForServer('http://localhost:3000/api/health');
-    console.log('[ELECTRON] Backend ready');
-    createWindow();
-  } catch (err) {
-    console.error('[ELECTRON] Backend failed to start:', err.message);
+  loadConfig();
+
+  if (isServerMode()) {
+    console.log('[ELECTRON] Server mode - starting backend');
+    startServer();
+    try {
+      await waitForServer('http://localhost:3000/api/health');
+      console.log('[ELECTRON] Backend ready');
+      createWindow();
+    } catch (err) {
+      console.error('[ELECTRON] Backend failed to start:', err.message);
+      createWindow();
+    }
+  } else {
+    console.log('[ELECTRON] Client mode - connecting to server');
     createWindow();
   }
 
@@ -93,3 +123,61 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (serverProcess) serverProcess.kill();
 });
+
+ipcMain.handle('save-config', (event, config) => {
+  try {
+    const configPath = getConfigPath();
+    const lines = [
+      `USE_MYSQL=${config.useMySql || false}`,
+      `DB_HOST=${config.dbHost || '127.0.0.1'}`,
+      `DB_PORT=${config.dbPort || '3306'}`,
+      `DB_USER=${config.dbUser || 'root'}`,
+      `DB_PASSWORD=${config.dbPassword || ''}`,
+      `DB_NAME=${config.dbName || 'pharmacy_db'}`,
+      `PORT=3000`,
+      `JWT_SECRET=${config.jwtSecret || 'pharmacy_secret_key_change_in_production'}`,
+      `SERVER_IP=${config.serverIp || '192.168.1.100'}`,
+    ];
+    fs.writeFileSync(configPath, lines.join('\n') + '\n');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-config', () => {
+  try {
+    const configPath = getConfigPath();
+    if (fs.existsSync(configPath)) {
+      const content = fs.readFileSync(configPath, 'utf8');
+      const config = {};
+      content.split('\n').forEach(line => {
+        const [key, ...valueParts] = line.split('=');
+        if (key && valueParts.length) {
+          config[key.trim()] = valueParts.join('=').trim();
+        }
+      });
+      return config;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('get-server-ip', () => {
+  const configPath = getConfigPath();
+  if (fs.existsSync(configPath)) {
+    const content = fs.readFileSync(configPath, 'utf8');
+    const match = content.match(/SERVER_IP=(.+)/);
+    return match ? match[1].trim() : null;
+  }
+  return null;
+});
+
+ipcMain.on('restart-app', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
+module.exports = { getConfigPath };

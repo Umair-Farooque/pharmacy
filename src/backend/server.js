@@ -6,8 +6,22 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 
 const db = require('./db');
+const autoSetup = require('./db/autoSetup');
 
 async function startServer() {
+  const USE_MYSQL = process.env.USE_MYSQL === 'true';
+
+  if (USE_MYSQL) {
+    console.log('[SETUP] Running MySQL auto-setup...');
+    try {
+      await autoSetup();
+    } catch (err) {
+      console.error('[SETUP] Auto-setup failed:', err.message);
+      console.error('[SETUP] Please check your MySQL connection settings in .env');
+      process.exit(1);
+    }
+  }
+
   await db.init();
 
   const app = express();

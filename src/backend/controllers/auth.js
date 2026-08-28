@@ -23,7 +23,7 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    await db.run('UPDATE users SET last_login = datetime("now") WHERE id = ?', [user.id]);
+    await db.run('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
 
     const token = generateToken(user);
     await logAudit(user.id, 'LOGIN', 'users', user.id, null);
@@ -34,6 +34,21 @@ async function login(req, res) {
     });
   } catch (err) {
     console.error('[AUTH] Login error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+async function setupAdmin(req, res) {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await db.run('UPDATE users SET password_hash = ? WHERE username = ?', [hash, 'admin']);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AUTH] Setup error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -59,5 +74,5 @@ async function changePassword(req, res) {
   }
 }
 
-module.exports = { login, changePassword };
+module.exports = { login, changePassword, setupAdmin };
 

@@ -100,11 +100,11 @@ async function getExpiringSoon(req, res) {
     const [rows] = await db.query(`
       SELECT sb.id, m.name, sb.batch_no, sb.expiry_date, sb.quantity_in_stock,
         sb.purchase_rate_per_unit,
-        CAST(julianday(sb.expiry_date) - julianday('now') AS INTEGER) as days_until_expiry
+        DATEDIFF(sb.expiry_date, CURDATE()) as days_until_expiry
       FROM stock_batches sb
       JOIN medicines m ON sb.medicine_id = m.id
       WHERE sb.quantity_in_stock > 0 AND sb.expiry_date IS NOT NULL
-        AND sb.expiry_date <= date('now', '+' || ? || ' days')
+        AND sb.expiry_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
       ORDER BY sb.expiry_date ASC
     `, [days]);
     res.json(rows);
