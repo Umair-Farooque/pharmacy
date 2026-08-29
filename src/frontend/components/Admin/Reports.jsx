@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../utils/api';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ExcelJS from 'exceljs';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
@@ -26,6 +27,8 @@ export default function Reports() {
         case 'stock': res = await api.get('/reports/stock-valuation'); break;
         case 'margins': res = await api.get('/reports/profit-margins'); break;
         case 'bills': res = await api.get(`/sales?start_date=${filters.start_date}&end_date=${filters.end_date}&limit=100`); break;
+        case 'expiry': res = await api.get('/reports/expiry-alerts?days=90'); break;
+        case 'lowstock': res = await api.get('/reports/low-stock'); break;
         default: res = {};
       }
       setData(res);
@@ -74,13 +77,15 @@ export default function Reports() {
 
       <div className="bg-white rounded-xl shadow-sm border p-4">
         <div className="flex flex-wrap gap-2 mb-4">
-          {[
-            { key: 'sales', label: 'Sales Report' },
-            { key: 'day', label: 'Day Summary' },
-            { key: 'bills', label: 'Bills' },
-            { key: 'stock', label: 'Stock Valuation' },
-            { key: 'margins', label: 'Profit Margins' },
-          ].map(tab => (
+{[
+  { key: 'sales', label: 'Sales Report' },
+  { key: 'day', label: 'Day Summary' },
+  { key: 'bills', label: 'Bills' },
+  { key: 'stock', label: 'Stock Valuation' },
+  { key: 'margins', label: 'Profit Margins' },
+  { key: 'expiry', label: 'Expiry Alerts' },
+  { key: 'lowstock', label: 'Low Stock' },
+].map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -196,6 +201,10 @@ function ReportContent({ tab, data }) {
           <MiniStat label="Bills" value={summary.total_bills || 0} />
           <MiniStat label="Avg Bill" value={`Rs. ${parseFloat(summary.avg_bill_value || 0).toFixed(0)}`} />
           <MiniStat label="Discounts" value={`Rs. ${parseFloat(summary.total_discount || 0).toFixed(0)}`} color="red" />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={() => exportToCSV(summary, cashier_breakdown || [], `sales-report-${filters.start_date}-to-${filters.end_date}`)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Export CSV</button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -602,7 +611,179 @@ function ReportContent({ tab, data }) {
     );
   }
 
+  if (tab === 'expiry') {
+    const items = data?.items || [];
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold text-gray-800">Expiring Items</h4>
+              <p className="text-sm text-gray-500">Items expiring within 90 days</p>
+            </div>
+            <button
+              onClick={() => exportToExcel(items, 'expiry-alerts', ['name', 'category', 'batch_no', 'quantity_in_stock', 'expiry_date', 'days_remaining', 'supplier_name', 'selling_rate_per_unit'])}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+            >
+              Export to Excel
+            </button>
+          </div>
+          {items.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">No items expiring within 90 days</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-3 font-medium text-gray-600">Medicine</th>
+                  <th className="text-left p-3 font-medium text-gray-600">Category</th>
+                  <th className="text-left p-3 font-medium text-gray-600">Batch</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Qty</th>
+                  <th className="text-left p-3 font-medium text-gray-600">Expiry Date</th>
+                  <th className="text-center p-3 font-medium text-gray-600">Days Left</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Rate</th>
+                  <th className="text-left p-3 font-medium text-gray-600">Supplier</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => {
+                  const days = item.days_remaining;
+                  const rowClass = days <= 0 ? 'bg-red-100' : days <= 30 ? 'bg-orange-100' : days <= 60 ? 'bg-yellow-50' : '';
+                  return (
+                    <tr key={i} className={`border-t hover:bg-gray-50 ${rowClass}`}>
+                      <td className="p-3 font-medium">{item.name}</td>
+                      <td className="p-3 text-gray-600">{item.category || '-'}</td>
+                      <td className="p-3 font-mono text-xs">{item.batch_no || '-'}</td>
+                      <td className="p-3 text-right">{item.quantity_in_stock}</td>
+                      <td className="p-3">{item.expiry_date}</td>
+                      <td className="p-3 text-center">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                          days <= 0 ? 'bg-red-200 text-red-800' : days <= 30 ? 'bg-orange-200 text-orange-800' : 'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {days <= 0 ? 'EXPIRED' : days}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
+                      <td className="p-3 text-gray-600">{item.supplier_name || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (tab === 'lowstock') {
+    const items = data?.items || [];
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold text-gray-800">Low Stock Items</h4>
+              <p className="text-sm text-gray-500">Items at or below reorder level</p>
+            </div>
+            <button
+              onClick={() => exportToExcel(items, 'low-stock', ['name', 'category', 'reorder_level', 'total_stock', 'purchase_rate_per_unit', 'selling_rate_per_unit', 'stock_value'])}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+            >
+              Export to Excel
+            </button>
+          </div>
+          {items.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">All items are sufficiently stocked</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-3 font-medium text-gray-600">Medicine</th>
+                  <th className="text-left p-3 font-medium text-gray-600">Category</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Reorder Level</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Current Stock</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Purchase Rate</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Sell Rate</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Stock Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className={`border-t hover:bg-gray-50 ${item.total_stock === 0 ? 'bg-red-50' : 'bg-orange-50'}`}>
+                    <td className="p-3 font-medium">{item.name}</td>
+                    <td className="p-3 text-gray-600">{item.category || '-'}</td>
+                    <td className="p-3 text-right">{item.reorder_level}</td>
+                    <td className="p-3 text-right">
+                      <span className={`font-bold ${item.total_stock === 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                        {item.total_stock}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right">Rs. {parseFloat(item.purchase_rate_per_unit || 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
+                    <td className="p-3 text-right">Rs. {parseFloat(item.stock_value || 0).toFixed(0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return null;
+}
+
+async function exportToExcel(data, filename, columns) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(filename);
+
+    worksheet.addRow(columns.map(col => col.replace(/_/g, ' ').toUpperCase()));
+
+    data.forEach(row => {
+      worksheet.addRow(columns.map(col => row[col] !== null && row[col] !== undefined ? row[col] : '-'));
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}-${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Export error:', err);
+    alert('Failed to export: ' + err.message);
+  }
+}
+
+function exportToCSV(summary, cashierData, filename) {
+  try {
+    let csv = 'Summary\n';
+    csv += `Total Revenue,${summary.total_revenue || 0}\n`;
+    csv += `Total Profit,${summary.total_profit || 0}\n`;
+    csv += `Total Bills,${summary.total_bills || 0}\n`;
+    csv += `Average Bill Value,${summary.avg_bill_value || 0}\n`;
+    csv += `Total Discount,${summary.total_discount || 0}\n\n`;
+    csv += 'Cashier Performance\n';
+    csv += 'Name,Bills,Revenue\n';
+    cashierData.forEach(c => {
+      csv += `${c.full_name},${c.bills},${c.revenue}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filename}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('CSV export error:', err);
+    alert('Failed to export CSV: ' + err.message);
+  }
 }
 
 function MiniStat({ label, value, color = 'gray' }) {

@@ -229,4 +229,50 @@ async function getProfitMargins(req, res) {
   }
 }
 
-module.exports = { getDashboard, getSalesReport, getDaySummary, getStockValuation, getProfitMargins };
+async function getExpiryAlerts(req, res) {
+  try {
+    const { days } = req.query;
+    const alertDays = parseInt(days) || 60;
+
+    const [rows] = await db.query(`
+      SELECT m.name, m.category, sb.batch_no, sb.quantity_in_stock,
+        sb.expiry_date, sb.purchase_rate_per_unit, sb.selling_rate_per_unit,
+        DATEDIFF(sb.expiry_date, CURDATE()) as days_remaining,
+        s.name as supplier_name
+      FROM stock_batches sb
+      JOIN medicines m ON sb.medicine_id = m.id
+      LEFT JOIN suppliers s ON sb.supplier_id = s.id
+      WHERE sb.quantity_in_stock > 0 AND sb.expiry_date IS NOT NULL
+      ORDER BY days_remaining ASC
+    `);
+
+    res.json({ items: rows || [], alert_days: alertDays });
+  } catch (err) {
+    console.error('[REPORT] Expiry alerts error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+async function getLowStockAlerts(req, res) {
+  try {
+    const [rows] = await db.query(`
+      SELECT m.name, m.category, m.reorder_level, m.pack_size,
+        COALESCE(SUM(sb.quantity_in_stock), 0) as total_stock,
+        MAX(sb.purchase_rate_per_unit) as purchase_rate_per_unit,
+        MAX(sb.selling_rate_per_unit) as selling_rate_per_unit,
+        (COALESCE(SUM(sb.quantity_in_stock), 0) * MAX(sb.purchase_rate_per_unit)) as stock_value
+      FROM medicines m
+      LEFT JOIN stock_batches sb ON m.id = sb.medicine_id AND sb.quantity_in_stock > 0
+      GROUP BY m.id, m.name, m.category, m.reorder_level, m.pack_size
+      HAVING total_stock <= m.reorder_level OR total_stock = 0
+      ORDER BY total_stock ASC
+    `);
+
+    res.json({ items: rows || [] });
+  } catch (err) {
+    console.error('[REPORT] Low stock error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+module.exports = { getDashboard, getSalesReport, getDaySummary, getStockValuation, getProfitMargins, getExpiryAlerts, getLowStockAlerts };

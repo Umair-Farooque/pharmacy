@@ -9,5 +9,7 @@ router.get('/day-summary/:date', requireAuth, report.getDaySummary);
 router.get('/day-summary', requireAuth, report.getDaySummary);
 router.get('/stock-valuation', requireAuth, requireAdmin, report.getStockValuation);
 router.get('/profit-margins', requireAuth, requireAdmin, report.getProfitMargins);
+router.get('/expiry-alerts', requireAuth, report.getExpiryAlerts);
+router.get('/low-stock', requireAuth, report.getLowStockAlerts);
 
 module.exports = router;
