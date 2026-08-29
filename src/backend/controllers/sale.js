@@ -19,7 +19,8 @@ async function createSale(req, res) {
     const saleItems = [];
 
     for (const item of items) {
-      const { medicine_id, quantity } = item;
+      const { medicine_id, quantity, service_charge } = item;
+      const serviceChg = parseFloat(service_charge) || 0;
 
       const [medicines] = await conn.query('SELECT * FROM medicines WHERE id = ?', [medicine_id]);
       if (medicines.length === 0) {
@@ -71,7 +72,7 @@ async function createSale(req, res) {
         remaining -= deduct;
       }
 
-      subtotal += lineTotal;
+      subtotal += lineTotal + serviceChg;
       totalProfit += lineProfit;
 
       saleItems.push({
@@ -80,8 +81,9 @@ async function createSale(req, res) {
         quantity,
         purchase_rate_per_unit: batches[0].purchase_rate_per_unit,
         selling_rate_per_unit: batches[0].selling_rate_per_unit,
-        line_total: lineTotal,
+        line_total: lineTotal + serviceChg,
         line_profit: lineProfit,
+        service_charge: serviceChg,
       });
     }
 
@@ -104,9 +106,9 @@ async function createSale(req, res) {
 
     for (const si of saleItems) {
       await conn.run(
-        `INSERT INTO sale_items (sale_id, medicine_id, batch_id, quantity, purchase_rate_per_unit, selling_rate_per_unit, line_total, line_profit)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [saleId, si.medicine_id, si.batch_id, si.quantity, si.purchase_rate_per_unit, si.selling_rate_per_unit, si.line_total, si.line_profit]
+        `INSERT INTO sale_items (sale_id, medicine_id, batch_id, quantity, purchase_rate_per_unit, selling_rate_per_unit, line_total, line_profit, service_charge)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [saleId, si.medicine_id, si.batch_id, si.quantity, si.purchase_rate_per_unit, si.selling_rate_per_unit, si.line_total, si.line_profit, si.service_charge || 0]
       );
     }
 

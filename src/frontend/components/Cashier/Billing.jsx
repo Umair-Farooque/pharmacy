@@ -20,6 +20,7 @@ export default function Billing({ onNavigate }) {
   const [billLookupError, setBillLookupError] = useState('');
   const [recentBills, setRecentBills] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
+  const [serviceCharge, setServiceCharge] = useState('');
 
   const searchRef = useRef(null);
   const quantityRef = useRef(null);
@@ -108,7 +109,11 @@ export default function Billing({ onNavigate }) {
         <p>Bill #: ${saleData.bill_number}<br/>
         ${new Date(saleData.created_at).toLocaleString()}</p>
         <div class="line"></div>
-        ${(saleData.items || []).map(item => `<div class="row"><span>${item.medicine_name || item.medicine_id}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(item.line_total)}</span></div>`).join('')}
+        ${(saleData.items || []).map(item => {
+          const serviceChg = item.service_charge || 0;
+          const itemTotal = item.line_total + serviceChg;
+          return `<div class="row"><span>${item.medicine_name || item.medicine_id}${serviceChg > 0 ? ` (+Service Rs.${serviceChg})` : ''}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(itemTotal)}</span></div>`;
+        }).join('')}
         <div class="line"></div>
         <div class="row"><span>Subtotal:</span><span>${fmt(saleData.subtotal)}</span></div>
         ${saleData.discount_amount > 0 ? `<div class="row"><span>Discount:</span><span>-${fmt(saleData.discount_amount)}</span></div>` : ''}
@@ -145,7 +150,13 @@ export default function Billing({ onNavigate }) {
     setSearchResults([]);
     setSearchTerm('');
     setSelectedIndex(-1);
-    setTimeout(() => quantityRef.current?.focus(), 50);
+    if (medicine.category === 'Drip Bottle') {
+      setServiceCharge('');
+      setTimeout(() => document.getElementById('serviceChargeInput')?.focus(), 50);
+    } else {
+      setServiceCharge('');
+      setTimeout(() => quantityRef.current?.focus(), 50);
+    }
   };
 
   const handleSearchKeyDown = (e) => {
@@ -197,16 +208,19 @@ export default function Billing({ onNavigate }) {
           quantity: qty,
           selling_rate_per_unit: medicine.selling_rate_per_unit || 0,
           stock: medicine.total_stock,
+          service_charge: parseFloat(serviceCharge) || 0,
         }]);
       }
       setPendingMedicine(null);
       setQuantityInput('');
+      setServiceCharge('');
       setSearchResults([]);
       setSearchTerm('');
       setTimeout(() => searchRef.current?.focus(), 50);
     } else if (e.key === 'Escape') {
       setPendingMedicine(null);
       setQuantityInput('');
+      setServiceCharge('');
       setSearchTerm('');
       setSearchResults([]);
       setTimeout(() => searchRef.current?.focus(), 50);
@@ -229,7 +243,8 @@ export default function Billing({ onNavigate }) {
     setCart(cart.filter(item => item.medicine_id !== medicineId));
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.selling_rate_per_unit, 0);
+  const subtotal = cart.reduce((sum, item) => sum + (item.quantity * item.selling_rate_per_unit) + (item.service_charge || 0), 0);
+  const totalServiceCharges = cart.reduce((sum, item) => sum + (item.service_charge || 0), 0);
   let discountAmount = 0;
   if (discountType === 'PERCENTAGE' && discountValue > 0) {
     discountAmount = subtotal * (discountValue / 100);
@@ -454,6 +469,22 @@ export default function Billing({ onNavigate }) {
                 <div className="flex-1">
                   <p className="font-medium text-gray-800">{pendingMedicine.name}</p>
                   <p className="text-xs text-gray-500">Stock: {pendingMedicine.total_stock} | Rate: Rs.{pendingMedicine.selling_rate_per_unit || '?'}</p>
+                  {pendingMedicine.category === 'Drip Bottle' && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <label className="text-sm font-medium text-gray-600">Service Charges:</label>
+                      <input
+                        id="serviceChargeInput"
+                        type="number"
+                        min="0"
+                        value={serviceCharge}
+                        onChange={e => setServiceCharge(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') quantityRef.current?.focus(); }}
+                        className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-gray-500">Rs.</span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium text-gray-600">Qty:</label>
@@ -470,7 +501,7 @@ export default function Billing({ onNavigate }) {
                   />
                   <span className="text-xs text-gray-500">Enter</span>
                   <button
-                    onClick={() => { setPendingMedicine(null); setQuantityInput(''); setSearchResults([]); setSearchTerm(''); searchRef.current?.focus(); }}
+                    onClick={() => { setPendingMedicine(null); setQuantityInput(''); setServiceCharge(''); setSearchResults([]); setSearchTerm(''); searchRef.current?.focus(); }}
                     className="text-gray-400 hover:text-gray-600 text-lg px-1"
                   >×</button>
                 </div>
@@ -498,7 +529,10 @@ export default function Billing({ onNavigate }) {
                 <tbody>
                   {cart.map(item => (
                     <tr key={item.medicine_id} className="border-t">
-                      <td className="p-3 font-medium">{item.name}</td>
+                      <td className="p-3">
+                        <span className="font-medium">{item.name}</span>
+                        {item.service_charge > 0 && <span className="block text-xs text-green-600">+Service: Rs.{item.service_charge}</span>}
+                      </td>
                       <td className="p-3 text-center">
                         <input
                           type="number"
@@ -509,7 +543,7 @@ export default function Billing({ onNavigate }) {
                         />
                       </td>
                       <td className="p-3 text-right">Rs. {item.selling_rate_per_unit.toFixed(2)}</td>
-                      <td className="p-3 text-right font-medium">Rs. {(item.quantity * item.selling_rate_per_unit).toFixed(2)}</td>
+                      <td className="p-3 text-right font-medium">Rs. {((item.quantity * item.selling_rate_per_unit) + (item.service_charge || 0)).toFixed(2)}</td>
                       <td className="p-3">
                         <button onClick={() => removeFromCart(item.medicine_id)} className="text-red-500 hover:text-red-700 text-lg">×</button>
                       </td>
