@@ -16,7 +16,7 @@ async function updateSettings(req, res) {
   try {
     for (const [key, value] of Object.entries(updates)) {
       await db.query(
-        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        'INSERT INTO settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
         [key, value]
       );
     }

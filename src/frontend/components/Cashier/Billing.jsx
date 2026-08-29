@@ -100,6 +100,7 @@ export default function Billing({ onNavigate }) {
         .center { text-align: center; }
         .line { border-top: 1px dashed #000; margin: 8px 0; }
         .row { display: flex; justify-content: space-between; }
+        .footer { margin-top: 15px; }
       </style></head><body>
         <div class="center"><h3>${settings.shop_name || 'Medical Store'}</h3>
         <p>${settings.shop_address || ''}<br/>${settings.shop_phone || ''}</p></div>
@@ -116,6 +117,8 @@ export default function Billing({ onNavigate }) {
         <div class="center"><p>Payment: ${saleData.payment_method}</p>
         <p>Cashier: ${saleData.cashier_name || ''}</p>
         <p>Thank you! Visit Again</p></div>
+        <div class="line"></div>
+        <div class="center footer">BunnySystems &nbsp;&nbsp; 03084624629</div>
       </body></html>
     `;
     const win = window.open('', '_blank', 'width=400,height=600');

@@ -27,6 +27,12 @@ if (USE_MYSQL) {
     init: async () => { console.log('[DB] Using MySQL'); },
     save: async () => {},
     DATA_DIR: null,
+    getNextSaleBill: async () => {
+      const [result] = await mysqlPool.execute('UPDATE sale_counter SET counter = counter + 1 WHERE id = 1');
+      const [rows] = await mysqlPool.query('SELECT counter FROM sale_counter WHERE id = 1');
+      const counter = rows[0]?.counter || 1;
+      return `BL${new Date().getFullYear()}${String(counter).padStart(5, '0')}`;
+    },
   };
   console.log('[DB] Configured for MySQL');
 } else {

@@ -13,6 +13,11 @@ export default function Reports() {
   });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState({});
+
+  useEffect(() => {
+    api.get('/settings').then(setSettings).catch(() => {});
+  }, []);
   const [error, setError] = useState(null);
 
   const loadReport = async () => {
@@ -139,7 +144,7 @@ export default function Reports() {
         </div>
       ) : (
         <ErrorBoundary>
-          <ReportContent tab={activeTab} data={data} />
+          <ReportContent tab={activeTab} data={data} settings={settings} />
         </ErrorBoundary>
       )}
     </div>
@@ -170,7 +175,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function ReportContent({ tab, data }) {
+function ReportContent({ tab, data, settings }) {
   if (!data) return null;
 
   if (tab === 'sales') {
@@ -424,6 +429,12 @@ function ReportContent({ tab, data }) {
                   <div className="text-center py-8 text-gray-500">Loading...</div>
                 ) : billDetails ? (
                   <div className="space-y-4">
+                    <div className="text-center border-b pb-3">
+                      <h2 className="font-bold text-lg">{settings.shop_name || 'Medical Store'}</h2>
+                      <p className="text-sm text-gray-600">{settings.shop_address || ''}</p>
+                      <p className="text-sm text-gray-600">{settings.shop_phone || ''}</p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <p className="text-gray-500 text-xs">Date & Time</p>
@@ -494,6 +505,10 @@ function ReportContent({ tab, data }) {
                           <span>Rs. {parseFloat(billDetails.total_profit || 0).toFixed(2)}</span>
                         </div>
                       )}
+                    </div>
+                    <div className="border-t pt-4 text-center text-sm text-gray-500">
+                      <p className="font-medium">BunnySystems</p>
+                      <p>03084624629</p>
                     </div>
                   </div>
                 ) : null}
