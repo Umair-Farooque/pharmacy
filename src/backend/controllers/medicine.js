@@ -8,9 +8,7 @@ async function listMedicines(req, res) {
       SELECT m.*,
         COALESCE(SUM(sb.quantity_in_stock), 0) as total_stock,
         r.rack_code,
-        (SELECT sb2.selling_rate_per_unit FROM stock_batches sb2
-         WHERE sb2.medicine_id = m.id AND sb2.quantity_in_stock > 0
-         ORDER BY sb2.expiry_date ASC LIMIT 1) as selling_rate_per_unit,
+        m.current_selling_price as selling_rate_per_unit,
         (SELECT sb3.purchase_rate_per_unit FROM stock_batches sb3
          WHERE sb3.medicine_id = m.id AND sb3.quantity_in_stock > 0
          ORDER BY sb3.expiry_date ASC LIMIT 1) as purchase_rate_per_unit
@@ -51,7 +49,7 @@ async function getMedicine(req, res) {
     if (medicines.length === 0) return res.status(404).json({ error: 'Medicine not found' });
 
     const [batches] = await db.query(
-      'SELECT * FROM stock_batches WHERE medicine_id = ? ORDER BY expiry_date ASC',
+      'SELECT * FROM stock_batches WHERE medicine_id = ? ORDER BY CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC, expiry_date ASC, id ASC',
       [req.params.id]
     );
 
@@ -103,17 +101,37 @@ async function updateMedicine(req, res) {
   }
 }
 
+async function updateMedicinePrice(req, res) {
+  const { selling_rate_per_unit } = req.body;
+  try {
+    await db.query(
+      `UPDATE medicines SET current_selling_price = ? WHERE id = ?`,
+      [selling_rate_per_unit, req.params.id]
+    );
+    await logAudit(req.user.id, 'MEDICINE_PRICE_UPDATED', 'medicines', req.params.id, { selling_rate_per_unit });
+    res.json({ message: 'Price updated' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
 async function deleteMedicine(req, res) {
   try {
     const [sales] = await db.query('SELECT COUNT(*) as count FROM sale_items WHERE medicine_id = ?', [req.params.id]);
     if (sales[0].count > 0) {
       return res.status(409).json({ error: 'Cannot delete medicine with sales history' });
     }
+    const [batches] = await db.query('SELECT id FROM stock_batches WHERE medicine_id = ?', [req.params.id]);
+    const batchIds = batches.map(b => b.id);
+    if (batchIds.length > 0) {
+      await db.query('DELETE FROM stock_transactions WHERE batch_id IN (?)', [batchIds]);
+    }
     await db.query('DELETE FROM stock_batches WHERE medicine_id = ?', [req.params.id]);
     await db.query('DELETE FROM medicines WHERE id = ?', [req.params.id]);
     await logAudit(req.user.id, 'MEDICINE_DELETED', 'medicines', req.params.id, null);
     res.json({ message: 'Medicine deleted' });
   } catch (err) {
+    console.error('[MEDICINE] Delete error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -127,4 +145,4 @@ async function getCategories(req, res) {
   }
 }
 
-module.exports = { listMedicines, getMedicine, createMedicine, updateMedicine, deleteMedicine, getCategories };
+module.exports = { listMedicines, getMedicine, createMedicine, updateMedicine, updateMedicinePrice, deleteMedicine, getCategories };

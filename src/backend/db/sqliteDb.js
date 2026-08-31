@@ -17,6 +17,7 @@ async function init() {
   if (await fs.pathExists(DB_FILE)) {
     const buf = await fs.readFile(DB_FILE);
     db = new SQL.Database(buf);
+    migrateSchema();
   } else {
     db = new SQL.Database();
     createTables();
@@ -26,6 +27,30 @@ async function init() {
 
   ready = true;
   console.log('[SQLITE] Database ready at', DB_FILE);
+}
+
+function migrateSchema() {
+  try {
+    db.run(`ALTER TABLE medicines ADD COLUMN current_selling_price REAL`);
+    console.log('[SQLITE MIGRATION] Added current_selling_price to medicines');
+  } catch (e) { }
+
+  try {
+    db.exec(`SELECT service_charge FROM sale_items LIMIT 1`);
+  } catch (e) {
+    try {
+      db.run(`ALTER TABLE sale_items ADD COLUMN service_charge REAL DEFAULT 0`);
+      console.log('[SQLITE MIGRATION] Added service_charge to sale_items');
+    } catch (e2) { }
+  }
+
+  const meds = query(`SELECT id FROM medicines WHERE current_selling_price IS NULL`);
+  for (const med of meds) {
+    const batches = query(`SELECT selling_rate_per_unit FROM stock_batches WHERE medicine_id = ? AND quantity_in_stock > 0 ORDER BY expiry_date ASC LIMIT 1`, [med.id]);
+    if (batches.length > 0) {
+      db.run(`UPDATE medicines SET current_selling_price = ? WHERE id = ?`, [batches[0].selling_rate_per_unit, med.id]);
+    }
+  }
 }
 
 async function save() {
@@ -88,6 +113,7 @@ function createTables() {
       reorder_level INTEGER DEFAULT 10,
       tax_rate REAL DEFAULT 0,
       barcode TEXT UNIQUE,
+      current_selling_price REAL,
       created_at TEXT DEFAULT (datetime('now')),
       created_by INTEGER,
       FOREIGN KEY (rack_id) REFERENCES racks(id),
@@ -153,6 +179,7 @@ function createTables() {
       selling_rate_per_unit REAL NOT NULL,
       line_total REAL NOT NULL,
       line_profit REAL NOT NULL,
+      service_charge REAL DEFAULT 0,
       FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
       FOREIGN KEY (medicine_id) REFERENCES medicines(id),
       FOREIGN KEY (batch_id) REFERENCES stock_batches(id)

@@ -182,27 +182,43 @@ async function getDaySummary(req, res) {
 
 async function getStockValuation(req, res) {
   try {
-    const [rows] = await db.query(`
+    const query1 = `
       SELECT m.name, m.category,
-        SUM(sb.quantity_in_stock) as total_units,
-        SUM(sb.quantity_in_stock * sb.purchase_rate_per_unit) as stock_value,
-        SUM(sb.quantity_in_stock * sb.selling_rate_per_unit) as retail_value
+        COALESCE(SUM(sb.quantity_in_stock), 0) as total_units,
+        COALESCE(SUM(sb.quantity_in_stock * sb.purchase_rate_per_unit), 0) as stock_value,
+        COALESCE(SUM(sb.quantity_in_stock), 0) * COALESCE(m.current_selling_price, 0) as retail_value
       FROM medicines m
-      JOIN stock_batches sb ON m.id = sb.medicine_id
-      WHERE sb.quantity_in_stock > 0
+      INNER JOIN stock_batches sb ON m.id = sb.medicine_id AND sb.quantity_in_stock > 0
       GROUP BY m.id ORDER BY stock_value DESC
-    `);
+    `;
+    const [rows] = await db.query(query1);
 
-    const [totals] = await db.query(`
+    const query2 = `
       SELECT
         COALESCE(SUM(quantity_in_stock), 0) as total_units,
-        COALESCE(SUM(quantity_in_stock * purchase_rate_per_unit), 0) as total_value,
-        COALESCE(SUM(quantity_in_stock * selling_rate_per_unit), 0) as total_retail
+        COALESCE(SUM(quantity_in_stock * purchase_rate_per_unit), 0) as total_value
       FROM stock_batches WHERE quantity_in_stock > 0
-    `);
+    `;
+    const [totals] = await db.query(query2);
 
-    res.json({ items: rows || [], totals: totals[0] || { total_units: 0, total_value: 0, total_retail: 0 } });
+    const query3 = `
+      SELECT AVG(current_selling_price) as avg_price FROM medicines WHERE current_selling_price IS NOT NULL
+    `;
+    const [medAvg] = await db.query(query3);
+
+    const query4 = `
+      SELECT COALESCE(SUM(quantity_in_stock), 0) as total FROM stock_batches WHERE quantity_in_stock > 0
+    `;
+    const [totalStock] = await db.query(query4);
+
+    const totalRetail = parseFloat(totalStock[0]?.total || 0) * parseFloat(medAvg[0]?.avg_price || 0);
+
+    res.json({
+      items: rows || [],
+      totals: { total_units: totals[0]?.total_units || 0, total_value: totals[0]?.total_value || 0, total_retail: totalRetail }
+    });
   } catch (err) {
+    console.error('[REPORT] Stock valuation error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 }
@@ -236,7 +252,7 @@ async function getExpiryAlerts(req, res) {
 
     const [rows] = await db.query(`
       SELECT m.name, m.category, sb.batch_no, sb.quantity_in_stock,
-        sb.expiry_date, sb.purchase_rate_per_unit, sb.selling_rate_per_unit,
+        sb.expiry_date, sb.purchase_rate_per_unit, m.current_selling_price as selling_rate_per_unit,
         DATEDIFF(sb.expiry_date, CURDATE()) as days_remaining,
         s.name as supplier_name
       FROM stock_batches sb
@@ -258,12 +274,11 @@ async function getLowStockAlerts(req, res) {
     const [rows] = await db.query(`
       SELECT m.name, m.category, m.reorder_level, m.pack_size,
         COALESCE(SUM(sb.quantity_in_stock), 0) as total_stock,
-        MAX(sb.purchase_rate_per_unit) as purchase_rate_per_unit,
-        MAX(sb.selling_rate_per_unit) as selling_rate_per_unit,
-        (COALESCE(SUM(sb.quantity_in_stock), 0) * MAX(sb.purchase_rate_per_unit)) as stock_value
+        m.current_selling_price as selling_rate_per_unit,
+        COALESCE(SUM(sb.quantity_in_stock * sb.purchase_rate_per_unit), 0) as stock_value
       FROM medicines m
       LEFT JOIN stock_batches sb ON m.id = sb.medicine_id AND sb.quantity_in_stock > 0
-      GROUP BY m.id, m.name, m.category, m.reorder_level, m.pack_size
+      GROUP BY m.id, m.name, m.category, m.reorder_level, m.pack_size, m.current_selling_price
       HAVING total_stock <= m.reorder_level OR total_stock = 0
       ORDER BY total_stock ASC
     `);

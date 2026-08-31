@@ -7,7 +7,11 @@ export default function Inventory() {
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRestockModal, setShowRestockModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState(null);
+  const [medicineDetail, setMedicineDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [racks, setRacks] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
@@ -36,6 +40,21 @@ export default function Inventory() {
       loadMedicines();
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const loadMedicineDetail = async (medicine) => {
+    setSelectedMedicine(medicine);
+    setDetailLoading(true);
+    setShowDetailModal(true);
+    try {
+      const res = await api.get(`/medicines/${medicine.id}`);
+      setMedicineDetail(res);
+    } catch (err) {
+      alert(err.message);
+      setShowDetailModal(false);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -73,7 +92,7 @@ export default function Inventory() {
                   <th className="text-left p-4 font-medium text-gray-600">Category</th>
                   <th className="text-left p-4 font-medium text-gray-600">Rack</th>
                   <th className="text-right p-4 font-medium text-gray-600">Stock</th>
-                  <th className="text-right p-4 font-medium text-gray-600">Buy Rate</th>
+                  <th className="text-right p-4 font-medium text-gray-600">Avg. Cost</th>
                   <th className="text-right p-4 font-medium text-gray-600">Sell Rate</th>
                   <th className="text-right p-4 font-medium text-gray-600">Actions</th>
                 </tr>
@@ -95,6 +114,18 @@ export default function Inventory() {
                     <td className="p-4 text-right text-gray-600">{med.purchase_rate_per_unit ? `Rs. ${med.purchase_rate_per_unit}` : '-'}</td>
                     <td className="p-4 text-right text-gray-600">{med.selling_rate_per_unit ? `Rs. ${med.selling_rate_per_unit}` : '-'}</td>
                     <td className="p-4 text-right space-x-2">
+                      <button
+                        onClick={() => loadMedicineDetail(med)}
+                        className="px-3 py-1 text-xs bg-purple-50 text-purple-700 rounded hover:bg-purple-100"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => { setSelectedMedicine(med); setShowEditModal(true); }}
+                        className="px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                      >
+                        Edit
+                      </button>
                       <button
                         onClick={() => { setSelectedMedicine(med); setShowRestockModal(true); }}
                         className="px-3 py-1 text-xs bg-green-50 text-green-700 rounded hover:bg-green-100"
@@ -125,6 +156,7 @@ export default function Inventory() {
           onSave={() => { setShowAddModal(false); loadMedicines(); }}
           racks={racks}
           suppliers={suppliers}
+          onRackCreated={() => { api.get('/racks').then(setRacks).catch(() => {}); }}
         />
       )}
 
@@ -136,20 +168,46 @@ export default function Inventory() {
           onSave={() => { setShowRestockModal(false); setSelectedMedicine(null); loadMedicines(); }}
         />
       )}
+
+      {showEditModal && selectedMedicine && (
+        <EditMedicineModal
+          medicine={selectedMedicine}
+          racks={racks}
+          onClose={() => { setShowEditModal(false); setSelectedMedicine(null); }}
+          onSave={() => { setShowEditModal(false); setSelectedMedicine(null); loadMedicines(); }}
+        />
+      )}
+
+      {showDetailModal && selectedMedicine && (
+        <MedicineDetailModal
+          medicine={selectedMedicine}
+          detail={medicineDetail}
+          loading={detailLoading}
+          onClose={() => { setShowDetailModal(false); setSelectedMedicine(null); setMedicineDetail(null); }}
+          onRestock={() => { setShowDetailModal(false); setShowRestockModal(true); }}
+        />
+      )}
     </div>
   );
 }
 
-function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
+function AddMedicineModal({ onClose, onSave, racks, suppliers, onRackCreated }) {
   const [form, setForm] = useState({
-    name: '', generic_name: '', category: '', manufacturer: '',
-    rack_id: '', pack_size: '', reorder_level: '10', tax_rate: '0', barcode: '',
+    name: '', generic_name: '', category: '', newCategory: '', manufacturer: '',
+    rack_id: '', newRack: '', pack_size: '', reorder_level: '10', tax_rate: '0', barcode: '',
     purchase_input_mode: 'unit',
     purchase_rate_per_unit: '', selling_rate_per_unit: '',
     pack_purchase_amount: '', pack_selling_amount: '',
     quantity_received: '', batch_no: '', expiry_date: '', supplier_id: ''
   });
   const [saving, setSaving] = useState(false);
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [showNewRack, setShowNewRack] = useState(false);
+  const [currentRacks, setCurrentRacks] = useState(racks);
+
+  useEffect(() => { setCurrentRacks(racks); }, [racks]);
+
+  const defaultCategories = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Cream', 'Drops', 'Powder', 'Drip Bottle', 'Other'];
 
   const updateField = (field, value) => {
     const updated = { ...form, [field]: value };
@@ -170,14 +228,34 @@ function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
       alert('Purchase rate, selling rate, and quantity received are required');
       return;
     }
+    if (!form.batch_no || String(form.batch_no).trim() === '') {
+      alert('Batch number is required');
+      return;
+    }
+    if (!form.expiry_date) {
+      alert('Expiry date is required');
+      return;
+    }
     setSaving(true);
     try {
+      let categoryValue = form.category;
+      if (showNewCategory && form.newCategory.trim()) {
+        categoryValue = form.newCategory.trim();
+      }
+
+      let rackIdValue = form.rack_id;
+      if (showNewRack && form.newRack.trim()) {
+        const rackRes = await api.post('/racks', { rack_code: form.newRack.trim(), description: '' });
+        rackIdValue = rackRes.id;
+        if (onRackCreated) onRackCreated();
+      }
+
       const medPayload = {
         name: form.name,
         generic_name: form.generic_name || null,
-        category: form.category || null,
+        category: categoryValue || null,
         manufacturer: form.manufacturer || null,
-        rack_id: form.rack_id || null,
+        rack_id: rackIdValue || null,
         pack_size: form.pack_size ? parseInt(form.pack_size) : null,
         reorder_level: parseInt(form.reorder_level) || 10,
         tax_rate: parseFloat(form.tax_rate) || 0,
@@ -187,12 +265,12 @@ function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
 
       const stockPayload = {
         medicine_id: med.id,
-        batch_no: form.batch_no || null,
+        batch_no: String(form.batch_no).trim(),
         supplier_id: form.supplier_id || null,
         purchase_rate_per_unit: parseFloat(form.purchase_rate_per_unit),
         selling_rate_per_unit: parseFloat(form.selling_rate_per_unit),
         quantity_received: parseInt(form.quantity_received),
-        expiry_date: form.expiry_date || null,
+        expiry_date: form.expiry_date,
       };
       await api.post('/stock/restock', stockPayload);
       onSave();
@@ -219,17 +297,20 @@ function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select value={form.category} onChange={e => updateField('category', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="">Select...</option>
-                <option value="Tablet">Tablet</option>
-                <option value="Capsule">Capsule</option>
-                <option value="Syrup">Syrup</option>
-                <option value="Injection">Injection</option>
-                <option value="Cream">Cream</option>
-                <option value="Drops">Drops</option>
-                <option value="Powder">Powder</option>
-                <option value="Other">Other</option>
-              </select>
+              {!showNewCategory ? (
+                <div className="flex gap-2">
+                  <select value={form.category} onChange={e => updateField('category', e.target.value)} className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="">Select...</option>
+                    {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button type="button" onClick={() => { setShowNewCategory(true); updateField('newCategory', ''); }} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">+ New</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input type="text" value={form.newCategory} onChange={e => updateField('newCategory', e.target.value)} placeholder="New category name" className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <button type="button" onClick={() => { setShowNewCategory(false); updateField('category', ''); updateField('newCategory', ''); }} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">Cancel</button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
@@ -237,10 +318,20 @@ function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Rack</label>
-              <select value={form.rack_id} onChange={e => updateField('rack_id', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                <option value="">Select...</option>
-                {racks.map(r => <option key={r.id} value={r.id}>{r.rack_code}</option>)}
-              </select>
+              {!showNewRack ? (
+                <div className="flex gap-2">
+                  <select value={form.rack_id} onChange={e => updateField('rack_id', e.target.value)} className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                    <option value="">Select...</option>
+                    {currentRacks.map(r => <option key={r.id} value={r.id}>{r.rack_code}</option>)}
+                  </select>
+                  <button type="button" onClick={() => { setShowNewRack(true); updateField('newRack', ''); }} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">+ New</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input type="text" value={form.newRack} onChange={e => updateField('newRack', e.target.value)} placeholder="e.g. A1, B2" className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <button type="button" onClick={() => { setShowNewRack(false); updateField('rack_id', ''); updateField('newRack', ''); }} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">Cancel</button>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Pack Size</label>
@@ -306,12 +397,12 @@ function AddMedicineModal({ onClose, onSave, racks, suppliers }) {
                 <input type="number" required value={form.quantity_received} onChange={e => updateField('quantity_received', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Batch No</label>
-                <input type="text" value={form.batch_no} onChange={e => updateField('batch_no', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Batch No *</label>
+                <input type="text" required value={form.batch_no} onChange={e => updateField('batch_no', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                <input type="date" value={form.expiry_date} onChange={e => updateField('expiry_date', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date *</label>
+                <input type="date" required value={form.expiry_date} onChange={e => updateField('expiry_date', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
@@ -347,16 +438,36 @@ function RestockModal({ medicine, suppliers, onClose, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!form.purchase_rate_per_unit) {
+      alert('Purchase rate is required');
+      setSaving(false);
+      return;
+    }
+    if (!form.quantity_received) {
+      alert('Quantity received is required');
+      setSaving(false);
+      return;
+    }
+    if (!form.batch_no || String(form.batch_no).trim() === '') {
+      alert('Batch number is required');
+      setSaving(false);
+      return;
+    }
+    if (!form.expiry_date) {
+      alert('Expiry date is required');
+      setSaving(false);
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
         medicine_id: form.medicine_id,
-        batch_no: form.batch_no || null,
+        batch_no: String(form.batch_no).trim(),
         supplier_id: form.supplier_id || null,
         purchase_rate_per_unit: parseFloat(form.purchase_rate_per_unit),
-        selling_rate_per_unit: parseFloat(form.selling_rate_per_unit),
+        selling_rate_per_unit: form.selling_rate_per_unit ? parseFloat(form.selling_rate_per_unit) : null,
         quantity_received: parseInt(form.quantity_received),
-        expiry_date: form.expiry_date || null,
+        expiry_date: form.expiry_date,
       };
       await api.post('/stock/restock', payload);
       onSave();
@@ -386,7 +497,7 @@ function RestockModal({ medicine, suppliers, onClose, onSave }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-bold text-gray-800 mb-1">Restock: {medicine.name}</h3>
-        <p className="text-sm text-gray-500 mb-4">Current stock: {medicine.total_stock} units</p>
+        <p className="text-sm text-gray-500 mb-4">Current stock: {medicine.total_stock} units | Current sell rate: Rs.{medicine.selling_rate_per_unit}</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -423,20 +534,20 @@ function RestockModal({ medicine, suppliers, onClose, onSave }) {
               <input type="number" step="0.01" required value={form.purchase_rate_per_unit} onChange={e => updateField('purchase_rate_per_unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Rate/Unit *</label>
-              <input type="number" step="0.01" required value={form.selling_rate_per_unit} onChange={e => updateField('selling_rate_per_unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Selling Rate/Unit (optional)</label>
+              <input type="number" step="0.01" value={form.selling_rate_per_unit} onChange={e => updateField('selling_rate_per_unit', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Leave blank to keep current" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Received *</label>
               <input type="number" required value={form.quantity_received} onChange={e => updateField('quantity_received', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Batch No</label>
-              <input type="text" value={form.batch_no} onChange={e => updateField('batch_no', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Batch No *</label>
+              <input type="text" required value={form.batch_no} onChange={e => updateField('batch_no', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-              <input type="date" value={form.expiry_date} onChange={e => updateField('expiry_date', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date *</label>
+              <input type="date" required value={form.expiry_date} onChange={e => updateField('expiry_date', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
@@ -454,6 +565,301 @@ function RestockModal({ medicine, suppliers, onClose, onSave }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function EditMedicineModal({ medicine, racks, onClose, onSave }) {
+  const [form, setForm] = useState({
+    name: medicine.name || '',
+    generic_name: medicine.generic_name || '',
+    category: medicine.category || '',
+    manufacturer: medicine.manufacturer || '',
+    rack_id: medicine.rack_id || '',
+    selling_rate_per_unit: medicine.selling_rate_per_unit || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const defaultCategories = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Cream', 'Drops', 'Powder', 'Drip Bottle', 'Other'];
+
+  useEffect(() => {
+    api.get(`/medicines/${medicine.id}`).then(data => {
+      setForm({
+        name: data.name || '',
+        generic_name: data.generic_name || '',
+        category: data.category || '',
+        manufacturer: data.manufacturer || '',
+        rack_id: data.rack_id || '',
+        selling_rate_per_unit: data.current_selling_price || '',
+      });
+    }).catch(err => console.error('Failed to load medicine:', err));
+  }, [medicine.id]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name || !form.selling_rate_per_unit) {
+      alert('Name and selling rate are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/medicines/${medicine.id}`, {
+        name: form.name,
+        generic_name: form.generic_name || null,
+        category: form.category || null,
+        manufacturer: form.manufacturer || null,
+        rack_id: form.rack_id || null,
+      });
+      await api.put(`/medicines/${medicine.id}/price`, {
+        selling_rate_per_unit: parseFloat(form.selling_rate_per_unit),
+      });
+      onSave();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Edit: {medicine.name}</h3>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Generic Name</label>
+            <input
+              type="text"
+              value={form.generic_name}
+              onChange={e => setForm({ ...form, generic_name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <select
+                value={form.category}
+                onChange={e => setForm({ ...form, category: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                <option value="">Select...</option>
+                {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Rack</label>
+              <select
+                value={form.rack_id}
+                onChange={e => setForm({ ...form, rack_id: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                <option value="">Select...</option>
+                {racks.map(r => <option key={r.id} value={r.id}>{r.rack_code} - {r.description}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer</label>
+            <input
+              type="text"
+              value={form.manufacturer}
+              onChange={e => setForm({ ...form, manufacturer: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Selling Rate (Rs.) *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={form.selling_rate_per_unit}
+              onChange={e => setForm({ ...form, selling_rate_per_unit: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function MedicineDetailModal({ medicine, detail, loading, onClose, onRestock }) {
+  const totalStock = detail?.batches?.reduce((sum, b) => sum + b.quantity_in_stock, 0) || 0;
+  const totalValue = detail?.batches?.reduce((sum, b) => sum + (b.quantity_in_stock * b.purchase_rate_per_unit), 0) || 0;
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const getDaysUntilExpiry = (dateStr) => {
+    if (!dateStr) return null;
+    const expiry = new Date(dateStr);
+    const today = new Date();
+    const diff = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+    return diff;
+  };
+
+  const getExpiryClass = (dateStr) => {
+    const days = getDaysUntilExpiry(dateStr);
+    if (days === null) return 'text-gray-400';
+    if (days <= 30) return 'text-red-600 font-medium';
+    if (days <= 90) return 'text-yellow-600';
+    return 'text-green-600';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">{medicine.name}</h3>
+            {medicine.generic_name && <p className="text-sm text-gray-500">{medicine.generic_name}</p>}
+            {medicine.category && <span className="inline-block mt-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">{medicine.category}</span>}
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8 text-gray-500">Loading...</div>
+        ) : detail ? (
+          <>
+            <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <p className="text-xs text-gray-500">Total Stock</p>
+                <p className="text-xl font-bold text-gray-800">{totalStock}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Inventory Value</p>
+                <p className="text-xl font-bold text-gray-800">Rs. {totalValue.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Current Selling Price</p>
+                <p className="text-xl font-bold text-green-600">Rs. {detail.current_selling_price || '0'}</p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <h4 className="font-semibold text-gray-700 mb-2">Batches ({detail.batches?.length || 0})</h4>
+              {detail.batches && detail.batches.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left p-3 font-medium text-gray-600">Batch No</th>
+                        <th className="text-right p-3 font-medium text-gray-600">Qty</th>
+                        <th className="text-right p-3 font-medium text-gray-600">Pur. Rate</th>
+                        <th className="text-right p-3 font-medium text-gray-600">Expiry</th>
+                        <th className="text-right p-3 font-medium text-gray-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.batches.map((batch) => {
+                        const days = getDaysUntilExpiry(batch.expiry_date);
+                        return (
+                          <tr key={batch.id} className="border-t">
+                            <td className="p-3 font-mono text-sm">{batch.batch_no}</td>
+                            <td className="p-3 text-right font-medium">{batch.quantity_in_stock}</td>
+                            <td className="p-3 text-right">Rs. {batch.purchase_rate_per_unit}</td>
+                            <td className="p-3 text-right">{formatDate(batch.expiry_date)}</td>
+                            <td className="p-3 text-right">
+                              {batch.quantity_in_stock === 0 ? (
+                                <span className="text-xs text-gray-400">Empty</span>
+                              ) : days === null ? (
+                                <span className="text-xs text-gray-400">No expiry</span>
+                              ) : days <= 0 ? (
+                                <span className="text-xs text-red-600">Expired</span>
+                              ) : days <= 30 ? (
+                                <span className="text-xs text-red-600">{days}d left</span>
+                              ) : days <= 90 ? (
+                                <span className="text-xs text-yellow-600">{days}d left</span>
+                              ) : (
+                                <span className="text-xs text-green-600">{days}d left</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">No batches found</p>
+              )}
+            </div>
+
+            {detail.transactions && detail.transactions.length > 0 && (
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-2">Recent Transactions</h4>
+                <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="text-left p-2 font-medium text-gray-600">Date</th>
+                        <th className="text-left p-2 font-medium text-gray-600">Type</th>
+                        <th className="text-right p-2 font-medium text-gray-600">Qty</th>
+                        <th className="text-right p-2 font-medium text-gray-600">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.transactions.map((tx) => (
+                        <tr key={tx.id} className="border-t">
+                          <td className="p-2">{new Date(tx.created_at).toLocaleDateString()}</td>
+                          <td className="p-2">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              tx.transaction_type === 'PURCHASE' ? 'bg-green-100 text-green-700' :
+                              tx.transaction_type === 'SALE' ? 'bg-blue-100 text-blue-700' :
+                              tx.transaction_type === 'RETURN' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>{tx.transaction_type}</span>
+                          </td>
+                          <td className="p-2 text-right">{tx.quantity_change > 0 ? '+' : ''}{tx.quantity_change}</td>
+                          <td className="p-2 text-right">{tx.quantity_after}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-8 text-gray-500">No data available</div>
+        )}
+
+        <div className="flex justify-end space-x-3 pt-4 mt-4 border-t">
+          <button onClick={onRestock} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
+            Restock
+          </button>
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

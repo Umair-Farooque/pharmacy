@@ -4,19 +4,44 @@ const { logAudit } = require('../middleware');
 async function restock(req, res) {
   const { medicine_id, batch_no, supplier_id, purchase_rate_per_unit, selling_rate_per_unit, quantity_received, expiry_date } = req.body;
 
-  if (!medicine_id || !purchase_rate_per_unit || !selling_rate_per_unit || !quantity_received) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  if (!medicine_id || !purchase_rate_per_unit || !quantity_received) {
+    return res.status(400).json({ error: 'Missing required fields: medicine_id, purchase_rate_per_unit, quantity_received' });
+  }
+
+  const trimmedBatchNo = batch_no ? String(batch_no).trim() : '';
+  if (!trimmedBatchNo) {
+    return res.status(400).json({ error: 'Batch number is required' });
+  }
+
+  if (!expiry_date || String(expiry_date).trim() === '') {
+    return res.status(400).json({ error: 'Expiry date is required' });
   }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
+    const [dupCheck] = await conn.query(
+      `SELECT id FROM stock_batches WHERE medicine_id = ? AND batch_no = ? LIMIT 1`,
+      [medicine_id, trimmedBatchNo]
+    );
+    if (dupCheck.length > 0) {
+      await conn.rollback();
+      return res.status(409).json({ error: `Batch number '${trimmedBatchNo}' already exists for this medicine` });
+    }
+
     const result = await conn.run(
       `INSERT INTO stock_batches (medicine_id, batch_no, supplier_id, purchase_rate_per_unit, selling_rate_per_unit, quantity_received, quantity_in_stock, expiry_date, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [medicine_id, batch_no || null, supplier_id || null, purchase_rate_per_unit, selling_rate_per_unit, quantity_received, quantity_received, expiry_date || null, req.user.id]
+      [medicine_id, trimmedBatchNo, supplier_id || null, purchase_rate_per_unit, selling_rate_per_unit || null, quantity_received, quantity_received, expiry_date, req.user.id]
     );
+
+    if (selling_rate_per_unit) {
+      await conn.run(
+        `UPDATE medicines SET current_selling_price = ? WHERE id = ?`,
+        [selling_rate_per_unit, medicine_id]
+      );
+    }
 
     const [existing] = await conn.query(
       'SELECT COALESCE(SUM(quantity_in_stock), 0) as total FROM stock_batches WHERE medicine_id = ?',
@@ -30,8 +55,8 @@ async function restock(req, res) {
     );
 
     await conn.commit();
-    await logAudit(req.user.id, 'STOCK_RESTOCK', 'stock_batches', result.insertId, { medicine_id, quantity: quantity_received });
-    res.status(201).json({ id: result.insertId, message: 'Stock added successfully' });
+    await logAudit(req.user.id, 'STOCK_RESTOCK', 'stock_batches', result.insertId, { medicine_id, quantity: quantity_received, batch_no: trimmedBatchNo });
+    res.status(201).json({ id: result.insertId, message: 'Stock added successfully', batch_no: trimmedBatchNo });
   } catch (err) {
     await conn.rollback();
     console.error('[STOCK] Restock error:', err.message);

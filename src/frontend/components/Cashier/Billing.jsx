@@ -94,6 +94,22 @@ export default function Billing({ onNavigate }) {
   };
 
   const printBillFromData = (saleData) => {
+    const aggregatedItems = {};
+    for (const item of (saleData.items || [])) {
+      const key = item.medicine_id;
+      if (!aggregatedItems[key]) {
+        aggregatedItems[key] = {
+          medicine_name: item.medicine_name || item.medicine_id,
+          quantity: 0,
+          selling_rate_per_unit: item.selling_rate_per_unit,
+          line_total: 0,
+          service_charge: 0,
+        };
+      }
+      aggregatedItems[key].quantity += item.quantity;
+      aggregatedItems[key].line_total += item.line_total;
+      aggregatedItems[key].service_charge += item.service_charge || 0;
+    }
     const printContent = `
       <html><head><title>Bill ${saleData.bill_number}</title>
       <style>
@@ -109,10 +125,10 @@ export default function Billing({ onNavigate }) {
         <p>Bill #: ${saleData.bill_number}<br/>
         ${new Date(saleData.created_at).toLocaleString()}</p>
         <div class="line"></div>
-        ${(saleData.items || []).map(item => {
+        ${Object.values(aggregatedItems).map(item => {
           const serviceChg = item.service_charge || 0;
           const itemTotal = item.line_total + serviceChg;
-          return `<div class="row"><span>${item.medicine_name || item.medicine_id}${serviceChg > 0 ? ` (+Service Rs.${serviceChg})` : ''}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(itemTotal)}</span></div>`;
+          return `<div class="row"><span>${item.medicine_name}${serviceChg > 0 ? ` (+Service Rs.${serviceChg.toFixed(2)})` : ''}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(itemTotal)}</span></div>`;
         }).join('')}
         <div class="line"></div>
         <div class="row"><span>Subtotal:</span><span>${fmt(saleData.subtotal)}</span></div>
@@ -264,7 +280,7 @@ export default function Billing({ onNavigate }) {
     setProcessing(true);
     try {
       const res = await api.post('/sales', {
-        items: cart.map(item => ({ medicine_id: item.medicine_id, quantity: item.quantity })),
+        items: cart.map(item => ({ medicine_id: item.medicine_id, quantity: item.quantity, service_charge: item.service_charge || 0 })),
         discount_type: discountType || null,
         discount_value: discountValue ? parseFloat(discountValue) : 0,
         tax_amount: 0,
@@ -292,7 +308,7 @@ export default function Billing({ onNavigate }) {
     setProcessing(true);
     try {
       const res = await api.post('/sales', {
-        items: cart.map(item => ({ medicine_id: item.medicine_id, quantity: item.quantity })),
+        items: cart.map(item => ({ medicine_id: item.medicine_id, quantity: item.quantity, service_charge: item.service_charge || 0 })),
         discount_type: discountType || null,
         discount_value: discountValue ? parseFloat(discountValue) : 0,
         tax_amount: 0,

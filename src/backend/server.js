@@ -70,7 +70,7 @@ async function startServer() {
 
   global.io = io;
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = process.env.PORT || 3001;
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] Pharmacy app running on http://localhost:${PORT}`);
     console.log(`[SERVER] API: http://localhost:${PORT}/api`);

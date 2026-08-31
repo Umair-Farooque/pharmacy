@@ -89,6 +89,7 @@ async function autoSetup() {
         reorder_level INT DEFAULT 10,
         tax_rate DECIMAL(5,2) DEFAULT 0,
         barcode VARCHAR(50) UNIQUE,
+        current_selling_price DECIMAL(10,2),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         created_by INT,
         FOREIGN KEY (rack_id) REFERENCES racks(id),
@@ -228,6 +229,28 @@ async function autoSetup() {
     `, 'sale_counter table created');
 
     console.log('[SETUP] Tables created');
+
+    try {
+      await run(`ALTER TABLE medicines ADD COLUMN current_selling_price DECIMAL(10,2)`, 'Migration: add current_selling_price');
+    } catch (e) { console.warn('[MIGRATION] current_selling_price may already exist'); }
+
+    try {
+      const [rows] = await connection.query("SELECT id FROM medicines WHERE current_selling_price IS NULL AND id IN (SELECT DISTINCT medicine_id FROM stock_batches WHERE quantity_in_stock > 0)");
+      for (const row of rows) {
+        const [batch] = await connection.query(
+          `SELECT selling_rate_per_unit FROM stock_batches WHERE medicine_id = ? AND quantity_in_stock > 0 ORDER BY expiry_date ASC LIMIT 1`,
+          [row.id]
+        );
+        if (batch.length > 0) {
+          await connection.query(`UPDATE medicines SET current_selling_price = ? WHERE id = ?`, [batch[0].selling_rate_per_unit, row.id]);
+        }
+      }
+      console.log('[MIGRATION] Backfilled current_selling_price from earliest-expiry batch');
+    } catch (e) { console.warn('[MIGRATION] Backfill error:', e.message); }
+
+    try {
+      await run(`ALTER TABLE sale_items ADD COLUMN service_charge DECIMAL(10,2) DEFAULT 0`, 'Migration: add service_charge');
+    } catch (e) { console.warn('[MIGRATION] service_charge may already exist'); }
 
     const [settingsCount] = await connection.query("SELECT COUNT(*) as count FROM settings");
     if (settingsCount[0].count === 0) {

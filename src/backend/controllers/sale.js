@@ -28,10 +28,16 @@ async function createSale(req, res) {
         return res.status(404).json({ error: `Medicine ${medicine_id} not found` });
       }
       const medicine = medicines[0];
+      const currentSellingPrice = parseFloat(medicine.current_selling_price) || 0;
+
+      if (currentSellingPrice <= 0) {
+        await conn.rollback();
+        return res.status(400).json({ error: `Selling price not set for ${medicine.name}` });
+      }
 
       const [batches] = await conn.query(
         `SELECT * FROM stock_batches WHERE medicine_id = ? AND quantity_in_stock > 0
-         ORDER BY expiry_date ASC LIMIT 50`,
+         ORDER BY CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC, expiry_date ASC, id ASC LIMIT 50`,
         [medicine_id]
       );
       const totalAvailable = batches.reduce((sum, b) => sum + b.quantity_in_stock, 0);
@@ -41,19 +47,16 @@ async function createSale(req, res) {
       }
 
       let remaining = quantity;
-      let lineTotal = 0;
-      let lineProfit = 0;
-      let primaryBatchId = null;
+      let medicineLineTotal = 0;
+      let medicineLineProfit = 0;
 
       for (const batch of batches) {
         if (remaining <= 0) break;
         const deduct = Math.min(remaining, batch.quantity_in_stock);
-        if (!primaryBatchId) primaryBatchId = batch.id;
-
-        const lineItemTotal = deduct * batch.selling_rate_per_unit;
-        const lineItemProfit = (batch.selling_rate_per_unit - batch.purchase_rate_per_unit) * deduct;
-        lineTotal += lineItemTotal;
-        lineProfit += lineItemProfit;
+        const lineItemTotal = deduct * currentSellingPrice;
+        const lineItemProfit = (currentSellingPrice - batch.purchase_rate_per_unit) * deduct;
+        medicineLineTotal += lineItemTotal;
+        medicineLineProfit += lineItemProfit;
 
         await conn.run(
           'UPDATE stock_batches SET quantity_in_stock = quantity_in_stock - ? WHERE id = ?',
@@ -69,22 +72,26 @@ async function createSale(req, res) {
           [medicine_id, batch.id, -deduct, afterQty + deduct, afterQty, cashier_id, `Sale: ${bill_number}`]
         );
 
+        saleItems.push({
+          medicine_id,
+          batch_id: batch.id,
+          quantity: deduct,
+          purchase_rate_per_unit: batch.purchase_rate_per_unit,
+          selling_rate_per_unit: currentSellingPrice,
+          line_total: lineItemTotal,
+          line_profit: lineItemProfit,
+          service_charge: 0,
+        });
+
         remaining -= deduct;
       }
 
-      subtotal += lineTotal + serviceChg;
-      totalProfit += lineProfit;
-
-      saleItems.push({
-        medicine_id,
-        batch_id: primaryBatchId,
-        quantity,
-        purchase_rate_per_unit: batches[0].purchase_rate_per_unit,
-        selling_rate_per_unit: batches[0].selling_rate_per_unit,
-        line_total: lineTotal + serviceChg,
-        line_profit: lineProfit,
-        service_charge: serviceChg,
-      });
+      subtotal += medicineLineTotal + serviceChg;
+      totalProfit += medicineLineProfit;
+      const lastSaleItem = saleItems.filter(si => si.medicine_id === medicine_id).pop();
+      if (lastSaleItem) {
+        lastSaleItem.service_charge = serviceChg;
+      }
     }
 
     let discountAmount = 0;
@@ -108,7 +115,7 @@ async function createSale(req, res) {
       await conn.run(
         `INSERT INTO sale_items (sale_id, medicine_id, batch_id, quantity, purchase_rate_per_unit, selling_rate_per_unit, line_total, line_profit, service_charge)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [saleId, si.medicine_id, si.batch_id, si.quantity, si.purchase_rate_per_unit, si.selling_rate_per_unit, si.line_total, si.line_profit, si.service_charge || 0]
+        [saleId, si.medicine_id, si.batch_id, si.quantity, si.purchase_rate_per_unit, si.selling_rate_per_unit, si.line_total, si.line_profit, si.service_charge]
       );
     }
 
