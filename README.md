@@ -1,6 +1,6 @@
 # Pharmacy Management System
 
-A desktop application for medical stores with inventory management, billing, and reports. Built with Electron, React, Express, and SQLite (defaults to local storage, optional MySQL for multi-PC setup).
+A desktop application for medical stores with inventory management, billing, and reports. Built with Electron, React, Express, and MySQL.
 
 ## Prerequisites
 
@@ -24,7 +24,7 @@ npm run build
 npm start
 ```
 
-The app will start with a default admin account. The database (SQLite) is created automatically in `data/pharmacy.db`.
+The app will start with a default admin account (if not set up). The database is MySQL — tables are created automatically on first run.
 
 ## Default Credentials
 
@@ -51,10 +51,9 @@ The app will start with a default admin account. The database (SQLite) is create
 - Today's sales summary
 
 ### Technical
-- **Database**: SQLite by default. Set `USE_MYSQL=true` in `.env` and configure MySQL credentials for multi-PC setup
+- **Database**: MySQL
 - **Charts**: Recharts-powered visual reports
 - **Printing**: Browser-based bill printing (works with any printer)
-- **Offline**: Works fully offline with local SQLite database
 
 ## Configuration
 
@@ -62,7 +61,6 @@ Edit `.env` to customize:
 
 ```env
 PORT=3000
-USE_MYSQL=false
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=root
@@ -71,11 +69,15 @@ DB_NAME=pharmacy_db
 JWT_SECRET=change_this_to_something_secure
 ```
 
-## Multi-PC Setup (with MySQL)
+## Setup
+
+The app requires a MySQL database. Install MySQL Server, then configure the connection in `.env`.
+
+## Multi-PC Setup
 
 1. Install MySQL Server on the main PC
 2. Set a static LAN IP (e.g., 192.168.1.100)
-3. Enable `USE_MYSQL=true` and configure MySQL credentials
+3. Configure MySQL credentials in `.env`
 4. Cashier PCs connect via `http://192.168.1.100:3000`
 5. Open firewall port 3000 on the server PC
 
@@ -96,7 +98,7 @@ pharmacy/
 ├── src/
 │   ├── backend/        # Express API server
 │   │   ├── controllers/
-│   │   ├── db/         # SQLite/MySQL adapter
+│   │   ├── db/         # MySQL database adapter
 │   │   ├── middleware/
 │   │   └── routes/
 │   └── frontend/       # React app
@@ -106,7 +108,7 @@ pharmacy/
 ├── scripts/
 │   └── build-frontend.js
 ├── public/              # Built frontend output
-└── data/               # SQLite database (created at runtime)
+└── .env                 # Environment configuration
 ```
 
 ## API Endpoints

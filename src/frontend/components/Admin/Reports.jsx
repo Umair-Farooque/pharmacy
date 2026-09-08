@@ -1100,7 +1100,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
               <p className="text-sm text-gray-500">Product returns and refunds</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => exportToExcel(items, 'returns-report', ['created_at', 'bill_number', 'medicine_name', 'batch_no', 'quantity_returned', 'selling_rate_per_unit', 'purchase_rate_per_unit', 'refund_amount', 'cost_returned', 'profit_reversed', 'processed_by_name', 'reason'])} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">Export</button>
+              <button onClick={() => exportToExcel(items, 'returns-report', ['return_reference', 'created_at', 'bill_number', 'medicine_name', 'batch_no', 'quantity_returned', 'selling_rate_per_unit', 'purchase_rate_per_unit', 'refund_amount', 'cogs_reversed', 'cost_returned', 'profit_reversed', 'processed_by_name', 'reason'])} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">Export</button>
             </div>
           </div>
 
@@ -1136,8 +1136,8 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
               <p className="text-2xl font-bold text-red-700">Rs. {parseFloat(summary.total_refund || 0).toFixed(0)}</p>
             </div>
             <div className="bg-purple-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Profit Reversed</p>
-              <p className="text-2xl font-bold text-purple-700">Rs. {parseFloat(summary.profit_reversed || 0).toFixed(0)}</p>
+              <p className="text-sm text-gray-600">COGS Reversed</p>
+              <p className="text-2xl font-bold text-purple-700">Rs. {parseFloat(summary.total_cogs_reversed || 0).toFixed(0)}</p>
             </div>
           </div>
 
@@ -1155,12 +1155,14 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="text-left p-3 font-medium text-gray-600">Date</th>
+                    <th className="text-left p-3 font-medium text-gray-600">Return Ref #</th>
                     <th className="text-left p-3 font-medium text-gray-600">Bill #</th>
                     <th className="text-left p-3 font-medium text-gray-600">Medicine</th>
                     <th className="text-left p-3 font-medium text-gray-600">Batch</th>
                     <th className="text-right p-3 font-medium text-gray-600">Qty</th>
                     <th className="text-right p-3 font-medium text-gray-600">Sell Price</th>
                     <th className="text-right p-3 font-medium text-gray-600">Cost</th>
+                    <th className="text-right p-3 font-medium text-gray-600">COGS Rev.</th>
                     <th className="text-right p-3 font-medium text-gray-600">Refund</th>
                     <th className="text-right p-3 font-medium text-gray-600">Profit Rev.</th>
                     <th className="text-left p-3 font-medium text-gray-600">User</th>
@@ -1171,12 +1173,14 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                   {items.map((item, i) => (
                     <tr key={i} className="border-t hover:bg-gray-50">
                       <td className="p-3 text-gray-600">{item.created_at ? new Date(item.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                      <td className="p-3 font-mono font-medium">{item.return_reference || '-'}</td>
                       <td className="p-3 font-mono font-medium">{item.bill_number}</td>
                       <td className="p-3 font-medium">{item.medicine_name}</td>
                       <td className="p-3 font-mono text-gray-700">{item.batch_no || 'N/A'}</td>
                       <td className="p-3 text-right font-bold text-red-600">-{item.quantity_returned}</td>
                       <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
                       <td className="p-3 text-right">Rs. {parseFloat(item.purchase_rate_per_unit || 0).toFixed(2)}</td>
+                      <td className="p-3 text-right text-blue-600">Rs. {parseFloat(item.cogs_reversed || 0).toFixed(2)}</td>
                       <td className="p-3 text-right font-bold text-red-600">Rs. {parseFloat(item.refund_amount || 0).toFixed(2)}</td>
                       <td className="p-3 text-right text-purple-600">Rs. {parseFloat(item.profit_reversed || 0).toFixed(2)}</td>
                       <td className="p-3 text-gray-600">{item.processed_by_name || '-'}</td>

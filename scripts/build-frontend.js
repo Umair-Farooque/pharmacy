@@ -1,11 +1,12 @@
 const esbuild = require('esbuild');
 const path = require('path');
-const fs = require('fs-extra');
+const fs = require('fs');
+const fsp = require('fs').promises;
 
 const outDir = path.join(__dirname, '../public');
 
 async function build() {
-  await fs.ensureDir(outDir);
+  await fs.promises.mkdir(outDir, { recursive: true });
 
   await esbuild.build({
     entryPoints: ['src/frontend/main.jsx'],
@@ -20,7 +21,7 @@ async function build() {
     }
   });
 
-  await fs.copy('src/frontend/index.html', path.join(outDir, 'index.html'));
+  fs.copyFileSync(path.join(__dirname, '../src/frontend/index.html'), path.join(outDir, 'index.html'));
 
   console.log('Frontend built to', outDir);
 }

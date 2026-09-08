@@ -514,10 +514,12 @@ async function getReturns(req, res) {
     let sql = `
       SELECT
         r.id,
+        r.return_reference,
         r.original_sale_id,
         r.sale_item_id,
         r.quantity_returned,
         r.refund_amount,
+        r.cogs_reversed,
         r.reason,
         r.processed_by,
         r.created_at,
@@ -564,7 +566,8 @@ async function getReturns(req, res) {
       SELECT
         COUNT(*) as total_returns,
         COALESCE(SUM(r.quantity_returned), 0) as total_items,
-        COALESCE(SUM(r.refund_amount), 0) as total_refund
+        COALESCE(SUM(r.refund_amount), 0) as total_refund,
+        COALESCE(SUM(r.cogs_reversed), 0) as total_cogs_reversed
       FROM returns r
       JOIN sales s ON r.original_sale_id = s.id
       JOIN sale_items si ON r.sale_item_id = si.id
@@ -579,7 +582,7 @@ async function getReturns(req, res) {
     res.json({
       items: rows || [],
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) },
-      summary: summary[0] || { total_returns: 0, total_items: 0, total_refund: 0 }
+      summary: summary[0] || { total_returns: 0, total_items: 0, total_refund: 0, total_cogs_reversed: 0 }
     });
   } catch (err) {
     console.error('[REPORT] Returns error:', err.message);

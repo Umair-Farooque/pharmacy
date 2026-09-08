@@ -12,7 +12,7 @@ router.post('/save-config', (req, res) => {
 
     const configPath = path.join(__dirname, '../../.env');
     const lines = [
-      `USE_MYSQL=${config.useMySql || false}`,
+      `USE_MYSQL=true`,
       `DB_HOST=${config.dbHost || '127.0.0.1'}`,
       `DB_PORT=${config.dbPort || '3306'}`,
       `DB_USER=${config.dbUser || 'root'}`,

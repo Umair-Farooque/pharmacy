@@ -17,10 +17,10 @@ dist/
 .env.local
 .env.*.local
 
-# Database files
-data/*.db
-data/*.db-journal
-data/*.sqlite
+# Database backups
+backups/*.sql
+backups/*.gz
+backups/*.zip
 
 # Logs
 *.log
@@ -37,11 +37,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-
-# Backup files
-backups/*.sql
-backups/*.gz
-backups/*.zip
 
 # React build
 public/app.js

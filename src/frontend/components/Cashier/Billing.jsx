@@ -21,6 +21,14 @@ export default function Billing({ onNavigate }) {
   const [recentBills, setRecentBills] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [serviceCharge, setServiceCharge] = useState('');
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundBillNumber, setRefundBillNumber] = useState('');
+  const [refundBill, setRefundBill] = useState(null);
+  const [refundItems, setRefundItems] = useState({});
+  const [refundReason, setRefundReason] = useState('');
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [refundError, setRefundError] = useState('');
+  const [refundSuccess, setRefundSuccess] = useState(null);
 
   const searchRef = useRef(null);
   const quantityRef = useRef(null);
@@ -93,7 +101,18 @@ export default function Billing({ onNavigate }) {
     return s.replace(/\.00$/, '');
   };
 
-  const printBillFromData = (saleData) => {
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  };
+
+  const printBillFromData = async (saleData) => {
     const aggregatedItems = {};
     for (const item of (saleData.items || [])) {
       const key = item.medicine_id;
@@ -101,7 +120,7 @@ export default function Billing({ onNavigate }) {
         aggregatedItems[key] = {
           medicine_name: item.medicine_name || item.medicine_id,
           quantity: 0,
-          selling_rate_per_unit: item.selling_rate_per_unit,
+          selling_rate_per_unit: parseFloat(item.selling_rate_per_unit || 0),
           line_total: 0,
           service_charge: 0,
         };
@@ -113,39 +132,54 @@ export default function Billing({ onNavigate }) {
     const printContent = `
       <html><head><title>Bill ${saleData.bill_number}</title>
       <style>
-        body { font-family: monospace; max-width: 300px; margin: 0 auto; padding: 10px; }
+        body { font-family: 'Courier New', monospace; margin: 0; padding: 6px; font-size: 15px; font-weight: bold; color: #000; }
         .center { text-align: center; }
-        .line { border-top: 1px dashed #000; margin: 8px 0; }
+        .left { text-align: left; }
+        .line { border-top: 2px solid #000; margin: 6px 0; }
         .row { display: flex; justify-content: space-between; }
-        .footer { margin-top: 15px; }
       </style></head><body>
-        <div class="center"><h3>${settings.shop_name || 'Medical Store'}</h3>
-        <p>${settings.shop_address || ''}<br/>${settings.shop_phone || ''}</p></div>
+        <div class="center"><h3 style="margin:0;font-size:20px;font-weight:bold;">${settings.shop_name || 'Medical Store'}</h3>
+        <p style="margin:2px 0;font-size:14px;font-weight:bold;">${settings.shop_address || ''}</p>
+        <p style="margin:2px 0;font-size:14px;font-weight:bold;">${settings.shop_phone || ''}${settings.shop_phone2 ? ' | ' + settings.shop_phone2 : ''}</p></div>
         <div class="line"></div>
-        <p>Bill #: ${saleData.bill_number}<br/>
-        ${new Date(saleData.created_at).toLocaleString()}</p>
+        <p style="margin:2px 0;font-size:14px;font-weight:bold;">Bill #: ${saleData.bill_number}<br/>
+        ${saleData.created_at ? formatDate(saleData.created_at) : 'N/A'}</p>
         <div class="line"></div>
         ${Object.values(aggregatedItems).map(item => {
-          const serviceChg = item.service_charge || 0;
+          const serviceChg = parseFloat(item.service_charge || 0);
           const itemTotal = item.line_total + serviceChg;
-          return `<div class="row"><span>${item.medicine_name}${serviceChg > 0 ? ` (+Service Rs.${serviceChg.toFixed(2)})` : ''}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(itemTotal)}</span></div>`;
+          return `<div class="row"><span style="font-size:14px;font-weight:bold;">${item.medicine_name || 'Unknown'}</span><span style="font-size:14px;font-weight:bold;">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span style="font-size:14px;font-weight:bold;">${fmt(itemTotal)}</span></div>`;
         }).join('')}
         <div class="line"></div>
-        <div class="row"><span>Subtotal:</span><span>${fmt(saleData.subtotal)}</span></div>
-        ${saleData.discount_amount > 0 ? `<div class="row"><span>Discount:</span><span>-${fmt(saleData.discount_amount)}</span></div>` : ''}
-        <div class="row"><strong>TOTAL:</strong><strong>Rs. ${fmt(saleData.final_amount)}</strong></div>
+        <div class="row"><span style="font-size:14px;font-weight:bold;">Subtotal:</span><span style="font-size:14px;font-weight:bold;">${fmt(saleData.subtotal || 0)}</span></div>
+        ${saleData.discount_amount > 0 ? `<div class="row"><span style="font-size:14px;font-weight:bold;">Discount:</span><span style="font-size:14px;font-weight:bold;">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
+        <div class="row"><strong style="font-size:16px;font-weight:bold;">TOTAL:</strong><strong style="font-size:16px;font-weight:bold;">Rs. ${fmt(saleData.final_amount || 0)}</strong></div>
         <div class="line"></div>
-        <div class="center"><p>Payment: ${saleData.payment_method}</p>
-        <p>Cashier: ${saleData.cashier_name || ''}</p>
-        <p>Thank you! Visit Again</p></div>
+        <div class="left"><p style="font-size:14px;font-weight:bold;">Payment: ${saleData.payment_method || 'CASH'}</p>
+        <p style="font-size:14px;font-weight:bold;">Medicines can be Returned within 7 days.</p>
+        <p style="font-size:14px;font-weight:bold;">Thank you! Visit Again</p></div>
         <div class="line"></div>
-        <div class="center footer">BunnySystems &nbsp;&nbsp; 03084624629</div>
+        <div class="center"><p style="font-size:13px;font-weight:bold;">BunnySystems &nbsp;&nbsp; 030862629</p></div>
+        <div class="line"></div>
       </body></html>
     `;
-    const win = window.open('', '_blank', 'width=400,height=600');
-    win.document.write(printContent);
-    win.document.close();
-    win.print();
+
+    if (window.electronAPI && window.electronAPI.printBill) {
+      try {
+        await window.electronAPI.printBill(
+          printContent,
+          settings.printer_name || null,
+          settings.paper_size || '80mm'
+        );
+      } catch (err) {
+        alert('Print failed: ' + err.message);
+      }
+    } else {
+      const win = window.open('', '_blank', 'width=400,height=600');
+      win.document.write(printContent);
+      win.document.close();
+      win.print();
+    }
   };
 
   const search = useCallback(async (term) => {
@@ -222,7 +256,7 @@ export default function Billing({ onNavigate }) {
           medicine_id: medicine.id,
           name: medicine.name,
           quantity: qty,
-          selling_rate_per_unit: medicine.selling_rate_per_unit || 0,
+          selling_rate_per_unit: parseFloat(medicine.selling_rate_per_unit) || 0,
           stock: medicine.total_stock,
           service_charge: parseFloat(serviceCharge) || 0,
         }]);
@@ -259,7 +293,7 @@ export default function Billing({ onNavigate }) {
     setCart(cart.filter(item => item.medicine_id !== medicineId));
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.quantity * item.selling_rate_per_unit) + (item.service_charge || 0), 0);
+  const subtotal = cart.reduce((sum, item) => sum + (item.quantity * parseFloat(item.selling_rate_per_unit || 0)) + (parseFloat(item.service_charge || 0)), 0);
   const totalServiceCharges = cart.reduce((sum, item) => sum + (item.service_charge || 0), 0);
   let discountAmount = 0;
   if (discountType === 'PERCENTAGE' && discountValue > 0) {
@@ -331,13 +365,104 @@ export default function Billing({ onNavigate }) {
     printBillFromData(billPreview);
   };
 
+  const openRefundModal = () => {
+    setRefundOpen(true);
+    setRefundBillNumber('');
+    setRefundBill(null);
+    setRefundItems({});
+    setRefundReason('');
+    setRefundError('');
+    setRefundSuccess(null);
+    setTimeout(() => document.getElementById('refund-bill-input')?.focus(), 50);
+  };
+
+  const closeRefundModal = () => {
+    setRefundOpen(false);
+    setRefundBillNumber('');
+    setRefundBill(null);
+    setRefundItems({});
+    setRefundReason('');
+    setRefundError('');
+    setRefundSuccess(null);
+  };
+
+  const searchRefundBill = async () => {
+    if (!refundBillNumber.trim()) return;
+    setRefundError('');
+    setRefundBill(null);
+    setRefundItems({});
+    try {
+      const res = await api.get(`/sales/${encodeURIComponent(refundBillNumber.trim())}/returnable-items`);
+      setRefundBill(res.sale);
+      // Initialize returnable items
+      const items = {};
+      (res.items || []).forEach(item => {
+        if (item.is_returnable) {
+          items[item.id] = { ...item, return_qty: 0 };
+        }
+      });
+      setRefundItems(items);
+    } catch (err) {
+      setRefundError(err.message || 'Bill not found');
+    }
+  };
+
+  const processRefund = async () => {
+    if (!refundBill) return;
+    
+    const returnItems = Object.entries(refundItems)
+      .filter(([_, item]) => item.return_qty > 0)
+      .map(([sale_item_id, item]) => ({
+        sale_item_id: parseInt(sale_item_id),
+        quantity_returned: item.return_qty,
+      }));
+
+    if (returnItems.length === 0) {
+      setRefundError('Please select at least one item to return');
+      return;
+    }
+
+    setRefundLoading(true);
+    setRefundError('');
+    try {
+      const res = await api.post('/sales/return', {
+        original_sale_id: refundBill.id,
+        items: returnItems,
+        reason: refundReason || 'Customer return',
+      });
+      setRefundSuccess(res);
+      setRefundItems({});
+      setRefundReason('');
+    } catch (err) {
+      setRefundError(err.message || 'Failed to process return');
+    } finally {
+      setRefundLoading(false);
+    }
+  };
+
+  const getRefundTotal = () => {
+    return Object.entries(refundItems).reduce((total, [_, item]) => {
+      return total + (item.return_qty * item.selling_rate_per_unit);
+    }, 0);
+  };
+
+  const getReturnableItems = () => {
+    if (!refundBill?.items) return [];
+    return refundBill.items.filter(item => item.is_returnable);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800">Billing</h2>
-        <button onClick={openBillLookup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-          Find Bill (F2)
-        </button>
+        <div className="flex gap-2">
+          <button onClick={openRefundModal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+            Refund / Return
+          </button>
+          <button onClick={openBillLookup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+            Find Bill (F2)
+          </button>
+        </div>
       </div>
 
       {billLookupOpen && (
@@ -366,9 +491,9 @@ export default function Billing({ onNavigate }) {
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="font-bold text-lg">#{billLookupResult.bill_number}</h4>
-                    <span className="text-green-600 font-semibold text-lg">Rs. {billLookupResult.final_amount?.toFixed(2)}</span>
+                    <span className="text-green-600 font-semibold text-lg">Rs. {parseFloat(billLookupResult.final_amount || 0).toFixed(2)}</span>
                   </div>
-                  <p className="text-sm text-gray-600">Date: {new Date(billLookupResult.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-gray-600">Date: {formatDate(billLookupResult.created_at)}</p>
                   <p className="text-sm text-gray-600">Cashier: {billLookupResult.cashier_name}</p>
                   <p className="text-sm text-gray-600">Payment: {billLookupResult.payment_method}</p>
                   {(billLookupResult.items || []).length > 0 && (
@@ -383,8 +508,8 @@ export default function Billing({ onNavigate }) {
                           <tr key={i} className="border-t">
                             <td className="py-1">{item.medicine_name || item.medicine_id}</td>
                             <td className="text-right">{item.quantity}</td>
-                            <td className="text-right">Rs.{item.selling_rate_per_unit?.toFixed(2)}</td>
-                            <td className="text-right">Rs.{item.line_total?.toFixed(2)}</td>
+                            <td className="text-right">Rs.{parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
+                            <td className="text-right">Rs.{item.line_total?.toFixed ? item.line_total.toFixed(2) : parseFloat(item.line_total || 0)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -426,11 +551,11 @@ export default function Billing({ onNavigate }) {
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="font-medium text-sm">#{bill.bill_number}</p>
-                            <p className="text-xs text-gray-500">{new Date(bill.created_at).toLocaleString()}</p>
+                            <p className="text-xs text-gray-500">{formatDate(bill.created_at)}</p>
                             <p className="text-xs text-gray-500">{bill.cashier_name}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-semibold">Rs. {bill.final_amount?.toFixed(2)}</p>
+                            <p className="font-semibold">Rs. {parseFloat(bill.final_amount || 0).toFixed(2)}</p>
                             <p className="text-xs text-gray-500">{bill.payment_method}</p>
                           </div>
                         </div>
@@ -438,6 +563,132 @@ export default function Billing({ onNavigate }) {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {refundOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-lg">Refund / Return</h3>
+              <button onClick={closeRefundModal} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+
+            <div className="p-4 border-b">
+              <div className="flex gap-2">
+                <input
+                  id="refund-bill-input"
+                  type="text"
+                  placeholder="Enter bill number (e.g. BL2026001234)"
+                  value={refundBillNumber}
+                  onChange={e => { setRefundBillNumber(e.target.value); setRefundError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') searchRefundBill(); }}
+                  className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                  autoFocus
+                />
+                <button onClick={searchRefundBill} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+                  Search
+                </button>
+              </div>
+              {refundError && <p className="text-red-500 text-sm mt-2">{refundError}</p>}
+            </div>
+
+            {refundSuccess ? (
+              <div className="p-4 flex-1 overflow-y-auto">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <h4 className="font-semibold text-green-800 mb-2">Return Processed Successfully</h4>
+                  <p className="text-sm text-green-700">Return Reference: {refundSuccess.return_reference}</p>
+                  <p className="text-sm text-green-700">Total Refund: Rs. {parseFloat(refundSuccess.total_refund_amount || 0).toFixed(2)}</p>
+                  <p className="text-sm text-green-700">Items Returned: {refundSuccess.items_processed}</p>
+                  <button onClick={closeRefundModal} className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+                    Close
+                  </button>
+                </div>
+              </div>
+            ) : refundBill ? (
+              <div className="p-4 flex-1 overflow-y-auto">
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-bold text-lg">#{refundBill.bill_number}</h4>
+                    <span className="text-green-600 font-semibold text-lg">Rs. {parseFloat(refundBill.final_amount || 0).toFixed(2)}</span>
+                  </div>
+                  <p className="text-sm text-gray-600">Date: {formatDate(refundBill.created_at)}</p>
+                  <p className="text-sm text-gray-600">Cashier: {refundBill.cashier_name}</p>
+                  <p className="text-sm text-gray-600">Payment: {refundBill.payment_method}</p>
+                </div>
+
+                <h4 className="font-semibold text-sm text-gray-700 mb-2">Select Items to Return</h4>
+                <div className="space-y-2 mb-4">
+                  {getReturnableItems().map(item => (
+                    <div key={item.id} className="border rounded-lg p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-medium text-sm">{item.medicine_name || 'Unknown'}</p>
+                          <p className="text-xs text-gray-500">Batch: {item.batch_no || 'N/A'} | Sold: {item.quantity} | Returned: {item.already_returned} | Returnable: {item.remaining_returnable}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</p>
+                          <p className="text-xs text-gray-500">each</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-600">Return Qty:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.remaining_returnable}
+                          value={refundItems[item.id]?.return_qty || 0}
+                          onChange={e => {
+                            const qty = parseInt(e.target.value) || 0;
+                            if (qty >= 0 && qty <= item.remaining_returnable) {
+                              setRefundItems(prev => ({
+                                ...prev,
+                                [item.id]: { ...item, return_qty: qty }
+                              }));
+                            }
+                          }}
+                          className="w-20 px-2 py-1 border rounded text-sm text-center"
+                        />
+                        <span className="text-xs text-gray-500">/ {item.remaining_returnable}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {getRefundTotal() > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-blue-800">Total Refund Amount:</span>
+                      <span className="font-bold text-blue-900 text-lg">Rs. {getRefundTotal().toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mb-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Reason (optional)</label>
+                  <input
+                    type="text"
+                    value={refundReason}
+                    onChange={e => setRefundReason(e.target.value)}
+                    placeholder="Reason for return..."
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+
+                <button
+                  onClick={processRefund}
+                  disabled={refundLoading || getRefundTotal() === 0}
+                  className="w-full py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {refundLoading ? 'Processing...' : `Process Return (Rs. ${getRefundTotal().toFixed(2)})`}
+                </button>
+              </div>
+            ) : (
+              <div className="p-4 flex-1 overflow-y-auto">
+                <p className="text-sm text-gray-500 text-center py-8">Search for a bill to process a return</p>
               </div>
             )}
           </div>
@@ -558,8 +809,8 @@ export default function Billing({ onNavigate }) {
                           className="w-16 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                       </td>
-                      <td className="p-3 text-right">Rs. {item.selling_rate_per_unit.toFixed(2)}</td>
-                      <td className="p-3 text-right font-medium">Rs. {((item.quantity * item.selling_rate_per_unit) + (item.service_charge || 0)).toFixed(2)}</td>
+                      <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
+                      <td className="p-3 text-right font-medium">Rs. {parseFloat((item.quantity * item.selling_rate_per_unit) + (item.service_charge || 0)).toFixed(2)}</td>
                       <td className="p-3">
                         <button onClick={() => removeFromCart(item.medicine_id)} className="text-red-500 hover:text-red-700 text-lg">×</button>
                       </td>
@@ -633,7 +884,7 @@ export default function Billing({ onNavigate }) {
               <h4 className="font-semibold text-green-800 mb-2">Sale Complete!</h4>
               <p className="text-sm text-green-700">Bill #: {billPreview.bill_number}</p>
               <p className="text-sm text-green-700">Amount: Rs. {billPreview.final_amount.toFixed(2)}</p>
-              <p className="text-sm text-green-700">Profit: Rs. {billPreview.total_profit?.toFixed(2) || '0.00'}</p>
+              <p className="text-sm text-green-700">Profit: Rs. {parseFloat(billPreview.total_profit || 0).toFixed(2) || '0.00'}</p>
               <button onClick={handlePrint} className="mt-3 w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
                 Print Bill
               </button>

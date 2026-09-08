@@ -187,10 +187,12 @@ async function autoSetup() {
     await run(`
       CREATE TABLE IF NOT EXISTS returns (
         id INT PRIMARY KEY AUTO_INCREMENT,
+        return_reference VARCHAR(50) UNIQUE NOT NULL,
         original_sale_id INT NOT NULL,
         sale_item_id INT NOT NULL,
         quantity_returned INT NOT NULL,
         refund_amount DECIMAL(10,2) NOT NULL,
+        cogs_reversed DECIMAL(10,2) NOT NULL DEFAULT 0,
         reason VARCHAR(200),
         processed_by INT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -199,6 +201,26 @@ async function autoSetup() {
         FOREIGN KEY (processed_by) REFERENCES users(id)
       )
     `, 'returns table created');
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS return_items (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        return_id INT NOT NULL,
+        sale_item_id INT NOT NULL,
+        medicine_id INT NOT NULL,
+        batch_id INT NOT NULL,
+        quantity_returned INT NOT NULL,
+        selling_rate_per_unit DECIMAL(10,2) NOT NULL,
+        purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
+        refund_amount DECIMAL(10,2) NOT NULL,
+        cogs_reversed DECIMAL(10,2) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (return_id) REFERENCES returns(id),
+        FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+        FOREIGN KEY (medicine_id) REFERENCES medicines(id),
+        FOREIGN KEY (batch_id) REFERENCES stock_batches(id)
+      )
+    `, 'return_items table created');
 
     await run(`
       CREATE TABLE IF NOT EXISTS audit_log (

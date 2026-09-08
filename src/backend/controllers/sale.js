@@ -13,6 +13,9 @@ async function createSale(req, res) {
   try {
     await conn.beginTransaction();
 
+    const [cashierRow] = await conn.query('SELECT full_name FROM users WHERE id = ?', [cashier_id]);
+    const cashier_name = cashierRow[0]?.full_name || '';
+
     const bill_number = await db.getNextSaleBill();
     let subtotal = 0;
     let totalProfit = 0;
@@ -74,6 +77,7 @@ async function createSale(req, res) {
 
         saleItems.push({
           medicine_id,
+          medicine_name: medicine.name,
           batch_id: batch.id,
           quantity: deduct,
           purchase_rate_per_unit: batch.purchase_rate_per_unit,
@@ -126,11 +130,18 @@ async function createSale(req, res) {
       id: saleId,
       bill_number,
       subtotal,
+      discount_type: discount_type || null,
+      discount_value: discount_value || 0,
       discount_amount: discountAmount,
       tax_amount: taxAmt,
       final_amount: finalAmount,
       total_profit: totalProfit,
+      payment_method: payment_method || 'CASH',
+      cashier_id,
+      cashier_name,
+      created_at: new Date().toISOString(),
       items: saleItems,
+
     });
   } catch (err) {
     await conn.rollback();
@@ -206,52 +217,247 @@ async function listSales(req, res) {
   }
 }
 
+async function generateReturnReference() {
+  const year = new Date().getFullYear();
+  const random = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+  return `RET-${year}${random}`;
+}
+
 async function processReturn(req, res) {
-  const { original_sale_id, sale_item_id, quantity_returned, reason } = req.body;
+  const { original_sale_id, items } = req.body;
   const processed_by = req.user.id;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'No items specified for return' });
+  }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    const [saleItems] = await conn.query('SELECT * FROM sale_items WHERE id = ?', [sale_item_id]);
-    if (saleItems.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Sale item not found' }); }
-
-    const si = saleItems[0];
-    if (quantity_returned > si.quantity) {
+    // Verify original sale exists
+    const [sales] = await conn.query('SELECT * FROM sales WHERE id = ?', [original_sale_id]);
+    if (sales.length === 0) {
       await conn.rollback();
-      return res.status(400).json({ error: 'Return quantity exceeds sold quantity' });
+      return res.status(404).json({ error: 'Sale not found' });
     }
 
-    const refundAmount = quantity_returned * si.selling_rate_per_unit;
+    const returnReference = await generateReturnReference();
+    let totalRefundAmount = 0;
+    let totalCogsReversed = 0;
+    const returnItemRecords = [];
 
-    await conn.run(
-      `INSERT INTO returns (original_sale_id, sale_item_id, quantity_returned, refund_amount, reason, processed_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [original_sale_id, sale_item_id, quantity_returned, refundAmount, reason || null, processed_by]
-    );
+    for (const returnItem of items) {
+      const { sale_item_id, quantity_returned } = returnItem;
 
-    await conn.run(
-      'UPDATE stock_batches SET quantity_in_stock = quantity_in_stock + ? WHERE id = ?',
-      [quantity_returned, si.batch_id]
-    );
+      if (!sale_item_id || !quantity_returned || quantity_returned <= 0) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'Invalid return item data' });
+      }
 
-    const [beforeRow] = await conn.query('SELECT quantity_in_stock FROM stock_batches WHERE id = ?', [si.batch_id]);
-    await conn.run(
-      `INSERT INTO stock_transactions (medicine_id, batch_id, transaction_type, quantity_change, quantity_before, quantity_after, performed_by, notes)
-       VALUES (?, ?, 'RETURN', ?, ?, ?, ?, ?)`,
-      [si.medicine_id, si.batch_id, quantity_returned, beforeRow[0].quantity_in_stock - quantity_returned, beforeRow[0].quantity_in_stock, processed_by, reason || 'Customer return']
+      // Get sale item details
+      const [saleItems] = await conn.query('SELECT * FROM sale_items WHERE id = ?', [sale_item_id]);
+      if (saleItems.length === 0) {
+        await conn.rollback();
+        return res.status(404).json({ error: 'Sale item not found' });
+      }
+
+      const si = saleItems[0];
+
+      // Calculate already returned quantity
+      const [previousReturns] = await conn.query(
+        'SELECT COALESCE(SUM(quantity_returned), 0) as total_returned FROM returns WHERE sale_item_id = ?',
+        [sale_item_id]
+      );
+      const alreadyReturned = previousReturns[0]?.total_returned || 0;
+      const remainingReturnable = si.quantity - alreadyReturned;
+
+      if (quantity_returned > remainingReturnable) {
+        await conn.rollback();
+        return res.status(400).json({
+          error: `Return quantity exceeds remaining returnable quantity for item. Available: ${remainingReturnable}, Requested: ${quantity_returned}`
+        });
+      }
+
+      // Calculate refund amount using original sale price
+      const refundAmount = quantity_returned * si.selling_rate_per_unit;
+      const cogsReversed = quantity_returned * si.purchase_rate_per_unit;
+
+      totalRefundAmount += refundAmount;
+      totalCogsReversed += cogsReversed;
+
+      returnItemRecords.push({
+        sale_item_id: si.id,
+        medicine_id: si.medicine_id,
+        batch_id: si.batch_id,
+        quantity_returned,
+        selling_rate_per_unit: si.selling_rate_per_unit,
+        purchase_rate_per_unit: si.purchase_rate_per_unit,
+        refund_amount: refundAmount,
+        cogs_reversed: cogsReversed,
+      });
+    }
+
+    // Create return record
+    const [returnResult] = await conn.query(
+      `INSERT INTO returns (return_reference, original_sale_id, sale_item_id, quantity_returned, refund_amount, cogs_reversed, reason, processed_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        returnReference,
+        original_sale_id,
+        returnItemRecords[0].sale_item_id,
+        returnItemRecords.reduce((sum, item) => sum + item.quantity_returned, 0),
+        totalRefundAmount,
+        totalCogsReversed,
+        req.body.reason || null,
+        processed_by
+      ]
     );
+    const returnId = returnResult.insertId;
+
+    // Create return items and restore stock
+    for (const item of returnItemRecords) {
+      // Create return item record
+      await conn.query(
+        `INSERT INTO return_items (return_id, sale_item_id, medicine_id, batch_id, quantity_returned, selling_rate_per_unit, purchase_rate_per_unit, refund_amount, cogs_reversed)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          returnId,
+          item.sale_item_id,
+          item.medicine_id,
+          item.batch_id,
+          item.quantity_returned,
+          item.selling_rate_per_unit,
+          item.purchase_rate_per_unit,
+          item.refund_amount,
+          item.cogs_reversed,
+        ]
+      );
+
+      // Restore stock to original batch
+      const [beforeRow] = await conn.query('SELECT quantity_in_stock FROM stock_batches WHERE id = ?', [item.batch_id]);
+      const beforeQty = beforeRow[0]?.quantity_in_stock || 0;
+
+      await conn.query(
+        'UPDATE stock_batches SET quantity_in_stock = quantity_in_stock + ? WHERE id = ?',
+        [item.quantity_returned, item.batch_id]
+      );
+
+      // Create stock transaction
+      await conn.query(
+        `INSERT INTO stock_transactions (medicine_id, batch_id, transaction_type, quantity_change, quantity_before, quantity_after, performed_by, notes)
+         VALUES (?, ?, 'RETURN', ?, ?, ?, ?, ?)`,
+        [
+          item.medicine_id,
+          item.batch_id,
+          item.quantity_returned,
+          beforeQty,
+          beforeQty + item.quantity_returned,
+          processed_by,
+          `Return: ${returnReference}`
+        ]
+      );
+    }
 
     await conn.commit();
-    await logAudit(processed_by, 'RETURN_PROCESSED', 'returns', original_sale_id, { refund_amount: refundAmount });
-    res.status(201).json({ message: 'Return processed', refund_amount: refundAmount });
+
+    // Log audit
+    await logAudit(
+      processed_by,
+      'RETURN_PROCESSED',
+      'returns',
+      returnId,
+      {
+        return_reference: returnReference,
+        original_sale_id,
+        total_refund_amount: totalRefundAmount,
+        total_cogs_reversed: totalCogsReversed,
+        items: returnItemRecords.length,
+      }
+    );
+
+    res.status(201).json({
+      message: 'Return processed successfully',
+      return_reference: returnReference,
+      return_id: returnId,
+      total_refund_amount: totalRefundAmount,
+      total_cogs_reversed: totalCogsReversed,
+      items_processed: returnItemRecords.length,
+    });
   } catch (err) {
     await conn.rollback();
-    res.status(500).json({ error: 'Server error' });
+    console.error('[SALE] Return error:', err.message);
+    res.status(500).json({ error: 'Server error: ' + err.message });
   } finally {
     conn.release();
   }
 }
 
-module.exports = { createSale, getSale, getSaleByBillNumber, listSales, processReturn };
+async function getReturnableItems(req, res) {
+  try {
+    const { sale_id } = req.params;
+
+    const [sales] = await db.query('SELECT * FROM sales WHERE id = ?', [sale_id]);
+    if (sales.length === 0) {
+      return res.status(404).json({ error: 'Sale not found' });
+    }
+
+    const [saleItems] = await db.query(
+      `SELECT si.*, m.name as medicine_name, sb.batch_no, sb.expiry_date
+       FROM sale_items si
+       JOIN medicines m ON si.medicine_id = m.id
+       LEFT JOIN stock_batches sb ON si.batch_id = sb.id
+       WHERE si.sale_id = ?`,
+      [sale_id]
+    );
+
+    const returnableItems = await Promise.all(
+      saleItems.map(async (si) => {
+        const [previousReturns] = await db.query(
+          'SELECT COALESCE(SUM(quantity_returned), 0) as total_returned FROM returns WHERE sale_item_id = ?',
+          [si.id]
+        );
+        const alreadyReturned = previousReturns[0]?.total_returned || 0;
+        const remainingReturnable = si.quantity - alreadyReturned;
+
+        return {
+          ...si,
+          already_returned: alreadyReturned,
+          remaining_returnable: remainingReturnable,
+          is_returnable: remainingReturnable > 0,
+        };
+      })
+    );
+
+    res.json({
+      sale: sales[0],
+      items: returnableItems,
+    });
+  } catch (err) {
+    console.error('[SALE] Get returnable items error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+async function searchSaleByBillNumber(req, res) {
+  try {
+    const { bill_number } = req.params;
+    const [sales] = await db.query(
+      `SELECT s.*, u.full_name as cashier_name FROM sales s
+       JOIN users u ON s.cashier_id = u.id
+       WHERE s.bill_number = ?`,
+      [bill_number]
+    );
+
+    if (sales.length === 0) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+
+    res.json(sales[0]);
+  } catch (err) {
+    console.error('[SALE] Search bill error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+module.exports = { createSale, getSale, getSaleByBillNumber, listSales, processReturn, getReturnableItems, searchSaleByBillNumber };

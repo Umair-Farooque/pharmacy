@@ -32,7 +32,6 @@ export default function SetupWizard({ onComplete }) {
             dbPassword: existingConfig.DB_PASSWORD || '',
             dbName: existingConfig.DB_NAME || 'pharmacy_db',
             serverIp: existingConfig.SERVER_IP || '192.168.1.100',
-            useMySql: existingConfig.USE_MYSQL === 'true',
           }));
         }
       });
@@ -71,7 +70,6 @@ export default function SetupWizard({ onComplete }) {
     setError('');
     try {
       const electronConfig = {
-        useMySql: isServer,
         dbHost: config.dbHost,
         dbPort: config.dbPort,
         dbUser: config.dbUser,

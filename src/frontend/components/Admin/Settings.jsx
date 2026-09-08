@@ -6,9 +6,13 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [printers, setPrinters] = useState([]);
 
   useEffect(() => {
     api.get('/settings').then(setSettings).catch(console.error).finally(() => setLoading(false));
+    if (window.electronAPI && window.electronAPI.getPrinters) {
+      window.electronAPI.getPrinters().then(setPrinters).catch(() => {});
+    }
   }, []);
 
   const handleSave = async () => {
@@ -41,8 +45,12 @@ export default function Settings() {
               <input type="text" value={settings.shop_name || ''} onChange={e => update('shop_name', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone 1</label>
               <input type="text" value={settings.shop_phone || ''} onChange={e => update('shop_phone', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone 2</label>
+              <input type="text" value={settings.shop_phone2 || ''} onChange={e => update('shop_phone2', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
@@ -105,6 +113,26 @@ export default function Settings() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Backup Time</label>
               <input type="time" value={settings.backup_time || '02:00'} onChange={e => update('backup_time', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Printer</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Thermal Printer</label>
+              <select value={settings.printer_name || ''} onChange={e => update('printer_name', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="">Default Printer</option>
+                {(printers || []).map((p, i) => <option key={i} value={p.name}>{p.name}{p.isDefault ? ' (Default)' : ''}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Paper Width</label>
+              <select value={settings.paper_size || '80mm'} onChange={e => update('paper_size', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="80mm">80mm</option>
+                <option value="58mm">58mm</option>
+              </select>
             </div>
           </div>
         </div>

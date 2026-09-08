@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartApp: () => {
     ipcRenderer.send('restart-app');
   },
+  printBill: (html, printerName, paperWidth) => {
+    return ipcRenderer.invoke('print-bill', { html, printerName, paperWidth });
+  },
+  getPrinters: () => {
+    return ipcRenderer.invoke('get-printers');
+  },
 });
 
 ipcRenderer.on('restart-app', () => {

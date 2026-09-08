@@ -1,7 +1,7 @@
 {
   "name": "pharmacy-management",
   "version": "1.0.0",
-  "description": "Medical Store Inventory Management System with Electron, React, and SQLite",
+  "description": "Medical Store Inventory Management System with Electron, React, and MySQL",
   "main": "electron.js",
   "keywords": ["pharmacy", "inventory", "electron", "medical-store"],
   "license": "MIT",
@@ -9,14 +9,12 @@
     "start": "electron .",
     "server": "node src/backend/server.js",
     "dev": "concurrently \"npm run server\" \"electron .\"",
-    "migrate": "node src/backend/db/migrate.js",
     "build": "node scripts/build-frontend.js",
     "build:win": "electron-builder --win",
     "build:server": "electron-builder --win --dir"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "date-fns": "^2.30.0",
     "dotenv": "^16.3.1",
@@ -24,14 +22,12 @@
     "esbuild": "^0.28.2",
     "exceljs": "^4.3.0",
     "express": "^4.18.2",
-    "fs-extra": "^11.1.1",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.6.5",
     "node-cron": "^3.0.2",
     "pdfkit": "^0.13.0",
     "recharts": "^3.10.1",
-    "socket.io": "^4.7.2",
-    "sql.js": "^1.14.2"
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.16",
@@ -65,7 +61,6 @@
   },
   "allowScripts": {
     "electron": true,
-    "better-sqlite3": true,
     "esbuild": true
   }
 }

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { PosPrinter } = require('electron-pos-printer');
 
 let mainWindow;
 let serverProcess;
@@ -128,7 +129,7 @@ ipcMain.handle('save-config', (event, config) => {
   try {
     const configPath = getConfigPath();
     const lines = [
-      `USE_MYSQL=${config.useMySql || false}`,
+      'USE_MYSQL=true',
       `DB_HOST=${config.dbHost || '127.0.0.1'}`,
       `DB_PORT=${config.dbPort || '3306'}`,
       `DB_USER=${config.dbUser || 'root'}`,
@@ -178,6 +179,46 @@ ipcMain.handle('get-server-ip', () => {
 ipcMain.on('restart-app', () => {
   app.relaunch();
   app.exit(0);
+});
+
+ipcMain.handle('print-bill', async (event, { html, printerName, paperWidth }) => {
+  try {
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    });
+    const content = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        body { font-family: 'Courier New', monospace; margin: 0; padding: 8px; }
+        .center { text-align: center; }
+        .line { border-top: 1px dashed #000; margin: 6px 0; }
+        .row { display: flex; justify-content: space-between; }
+      </style></head><body>${html}</body></html>`;
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(content));
+    const printOptions = {
+      silent: true,
+      deviceName: printerName || undefined,
+      copies: 1,
+      pageSize: paperWidth === '58mm' ? '58mm' : '80mm',
+      margin: '0mm',
+    };
+    const data = await win.webContents.print(printOptions);
+    win.close();
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-printers', async () => {
+  try {
+    const win = new BrowserWindow({ show: false });
+    const printers = await win.webContents.getPrintersAsync();
+    win.close();
+    return printers.map(p => ({ name: p.name, isDefault: p.isDefault }));
+  } catch (err) {
+    return [];
+  }
 });
 
 module.exports = { getConfigPath };
