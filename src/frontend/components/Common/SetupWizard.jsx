@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../utils/api';
 
-export default function SetupWizard({ onComplete }) {
+export default function SetupWizard() {
   const [step, setStep] = useState(1);
   const [isServer, setIsServer] = useState(true);
   const [config, setConfig] = useState({

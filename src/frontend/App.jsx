@@ -18,7 +18,7 @@ function App() {
   const [showSetup, setShowSetup] = React.useState(!localStorage.getItem('setup_complete'));
 
   if (showSetup) {
-    return <SetupWizard onComplete={() => setShowSetup(false)} />;
+    return <SetupWizard />;
   }
 
   if (loading) {

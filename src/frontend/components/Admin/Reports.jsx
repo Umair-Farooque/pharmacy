@@ -105,6 +105,9 @@ export default function Reports() {
     return `${y}-${m}-${d}`;
   };
 
+  const fmt = (v) => parseFloat(v || 0).toFixed(0);
+  const fmtRs = (v) => `Rs. ${fmt(v)}`;
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-800">Reports & Analytics</h2>
@@ -1202,9 +1205,6 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
     const startDate = period?.start_date || s.start_date;
     const endDate = period?.end_date || s.end_date;
 
-    const fmt = (v) => parseFloat(v || 0).toFixed(0);
-    const fmtRs = (v) => `Rs. ${fmt(v)}`;
-
     const netSalesForMargin = parseFloat(s.net_sales) || 0;
     const grossProfitForMargin = parseFloat(s.gross_profit) || 0;
     const marginColor = grossProfitForMargin >= 0 ? 'text-green-700' : 'text-red-600';
@@ -1363,8 +1363,6 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   if (tab === 'category') {
     const { summary, categories } = data || { summary: {}, categories: [] };
     const s = summary || {};
-
-    const fmtRs = (v) => `Rs. ${parseFloat(v || 0).toFixed(0)}`;
     const topCategory = categories?.[0];
 
     const [sortField, setSortField] = useState('revenue');
@@ -1509,8 +1507,6 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   if (tab === 'users') {
     const { summary, users } = data || { summary: {}, users: [] };
     const s = summary || {};
-
-    const fmtRs = (v) => `Rs. ${parseFloat(v || 0).toFixed(0)}`;
 
     const [sortField, setSortField] = useState('revenue');
     const [selectedUser, setSelectedUser] = useState(null);
@@ -1913,6 +1909,16 @@ async function exportToExcel(data, filename, columns) {
   }
 }
 
+function downloadCSV(csv, filename) {
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportToCSV(summary, cashierData, filename, medicineFilter) {
   try {
     let csv = 'Summary\n';
@@ -1931,13 +1937,7 @@ function exportToCSV(summary, cashierData, filename, medicineFilter) {
       csv += `${c.full_name},${c.bills},${c.revenue}\n`;
     });
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${filename}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(csv, `${filename}.csv`);
   } catch (err) {
     console.error('CSV export error:', err);
     alert('Failed to export CSV: ' + err.message);
@@ -1975,13 +1975,7 @@ function exportPLCSV(data) {
       });
     }
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `profit-loss-${startDate}-to-${endDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(csv, `profit-loss-${startDate}-to-${endDate}.csv`);
   } catch (err) {
     console.error('P&L CSV export error:', err);
     alert('Failed to export P&L CSV: ' + err.message);
@@ -1999,13 +1993,7 @@ function exportCatCSV(data) {
     });
     csv += `\nTotal,${summary?.total_units || 0},${summary?.total_revenue || 0},${summary?.total_cost || 0},${summary?.total_profit || 0},${summary?.avg_margin || 0}\n`;
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `category-sales.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(csv, 'category-sales.csv');
   } catch (err) {
     console.error('Category CSV export error:', err);
     alert('Failed to export Category CSV: ' + err.message);
@@ -2025,13 +2013,7 @@ function exportUserCSV(data) {
     });
     csv += `\nTotal,All,${summary?.total_bills || 0},${summary?.total_items || 0},${summary?.total_revenue || 0},${summary?.total_discount || 0},${summary?.total_profit || 0},-,-${summary?.avg_margin || 0},\n`;
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `user-activity.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCSV(csv, 'user-activity.csv');
   } catch (err) {
     console.error('User CSV export error:', err);
     alert('Failed to export User CSV: ' + err.message);
