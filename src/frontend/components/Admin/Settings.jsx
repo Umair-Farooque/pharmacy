@@ -17,6 +17,7 @@ export default function Settings() {
   const [restoreFilename, setRestoreFilename] = useState('');
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  const [customBackupDir, setCustomBackupDir] = useState('');
 
   useEffect(() => {
     api.get('/settings').then(setSettings).catch(console.error).finally(() => setLoading(false));
@@ -30,6 +31,7 @@ export default function Settings() {
     try {
       const status = await api.get('/backup/status');
       setBackupStatus(status);
+      if (status?.backup_dir) setCustomBackupDir(status.backup_dir);
     } catch (err) {
       console.error('Backup status error:', err);
     }
@@ -59,7 +61,7 @@ export default function Settings() {
     setBackupError('');
     setBackupSuccess('');
     try {
-      await api.post('/backup/create', {});
+      await api.post('/backup/create', customBackupDir ? { backup_dir: customBackupDir } : {});
       setBackupSuccess('Backup started successfully');
       setTimeout(() => setBackupSuccess(''), 3000);
       setTimeout(loadBackupStatus, 2000);
@@ -201,7 +203,17 @@ export default function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Backup Directory</label>
-              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{backupStatus?.backup_dir || 'backups/'}</p>
+              <div className="flex gap-2">
+                <input type="text" value={customBackupDir || ''} onChange={e => setCustomBackupDir(e.target.value)} placeholder="Select backup folder..." className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                <button type="button" onClick={async () => {
+                  if (window.electronAPI?.selectBackupDir) {
+                    const dir = await window.electronAPI.selectBackupDir();
+                    if (dir) setCustomBackupDir(dir);
+                  } else {
+                    alert('Folder selection is only available in the desktop app');
+                  }
+                }} className="px-3 py-2 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200 whitespace-nowrap">Browse</button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Retention Count</label>

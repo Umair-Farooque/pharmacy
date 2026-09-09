@@ -557,10 +557,9 @@ async function getReturns(req, res) {
     const [countResult] = await db.query(countSql, params);
     const total = countResult[0]?.total || 0;
 
-    sql += ' ORDER BY r.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const [rows] = await db.query(sql, params);
+    const pagedSql = sql + ' ORDER BY r.created_at DESC LIMIT ? OFFSET ?';
+    const pagedParams = [...params, parseInt(limit), parseInt(offset)];
+    const [rows] = await db.query(pagedSql, pagedParams);
 
     const [summary] = await db.query(`
       SELECT

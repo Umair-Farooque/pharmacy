@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -132,6 +132,16 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (serverProcess) serverProcess.kill();
+});
+
+ipcMain.handle('select-backup-dir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Backup Directory',
+    properties: ['openDirectory', 'createDirectory'],
+    buttonLabel: 'Select Folder',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
 });
 
 ipcMain.handle('save-config', (event, config) => {

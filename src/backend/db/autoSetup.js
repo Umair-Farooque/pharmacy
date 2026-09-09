@@ -345,6 +345,14 @@ async function autoSetup() {
     console.log('[SETUP] Tables created');
 
     try {
+      await run(`ALTER TABLE returns ADD COLUMN return_reference VARCHAR(50) UNIQUE NOT NULL`, 'Migration: add returns.return_reference');
+    } catch (e) { console.warn('[MIGRATION] returns.return_reference may already exist'); }
+
+    try {
+      await run(`ALTER TABLE returns ADD COLUMN cogs_reversed DECIMAL(10,2) NOT NULL DEFAULT 0`, 'Migration: add returns.cogs_reversed');
+    } catch (e) { console.warn('[MIGRATION] returns.cogs_reversed may already exist'); }
+
+    try {
       await run(`ALTER TABLE medicines ADD COLUMN current_selling_price DECIMAL(10,2)`, 'Migration: add current_selling_price');
     } catch (e) { console.warn('[MIGRATION] current_selling_price may already exist'); }
 

@@ -391,9 +391,7 @@ export default function Billing({ onNavigate }) {
 
   const subtotal = cart.reduce((sum, item) => sum + (item.quantity * parseFloat(item.selling_rate_per_unit || 0)) + (parseFloat(item.service_charge || 0)), 0);
   let discountAmount = 0;
-  if (discountType === 'PERCENTAGE' && discountValue > 0) {
-    discountAmount = subtotal * (discountValue / 100);
-  } else if (discountType === 'FIXED' && discountValue > 0) {
+  if (discountType === 'FIXED' && discountValue > 0) {
     discountAmount = parseFloat(discountValue);
   }
   const finalAmount = Math.max(0, subtotal - discountAmount);
@@ -427,11 +425,6 @@ export default function Billing({ onNavigate }) {
   const handleSubmitSale = async () => {
     if (cart.length === 0) return alert('Cart is empty');
 
-    const discountCap = parseFloat(settings.cashier_discount_cap_percent || 5);
-    if (discountType === 'PERCENTAGE' && parseFloat(discountValue) > discountCap) {
-      return alert(`Discount exceeds your ${discountCap}% cap. Admin approval required.`);
-    }
-
     const inlinePhone = inlineCustomerPhoneRef.current?.value?.trim() || '';
     const inlineName = inlineCustomerNameRef.current?.value?.trim() || '';
 
@@ -459,11 +452,6 @@ export default function Billing({ onNavigate }) {
 
   const handleSubmitSaleAndPrint = async () => {
     if (cart.length === 0) return alert('Cart is empty');
-
-    const discountCap = parseFloat(settings.cashier_discount_cap_percent || 5);
-    if (discountType === 'PERCENTAGE' && parseFloat(discountValue) > discountCap) {
-      return alert(`Discount exceeds your ${discountCap}% cap. Admin approval required.`);
-    }
 
     const inlinePhone = inlineCustomerPhoneRef.current?.value?.trim() || '';
     const inlineName = inlineCustomerNameRef.current?.value?.trim() || '';
@@ -1260,7 +1248,6 @@ export default function Billing({ onNavigate }) {
                 <div className="flex space-x-2">
                   <select value={discountType} onChange={e => setDiscountType(e.target.value)} className="flex-1 px-2 py-1.5 border rounded text-sm">
                     <option value="">None</option>
-                    <option value="PERCENTAGE">%</option>
                     <option value="FIXED">Rs.</option>
                   </select>
                   {discountType && (
@@ -1277,7 +1264,6 @@ export default function Billing({ onNavigate }) {
                 <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm">
                   <option value="CASH">Cash</option>
                   <option value="CARD">Card</option>
-                  <option value="UPI">UPI</option>
                   <option value="CREDIT">Credit</option>
                 </select>
               </div>

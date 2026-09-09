@@ -4,7 +4,10 @@ const path = require('path');
 const db = require('../db');
 const { logAudit } = require('../middleware');
 
-function getBackupDir() {
+function getBackupDir(reqBackupDir) {
+  if (reqBackupDir && typeof reqBackupDir === 'string' && reqBackupDir.trim()) {
+    return path.resolve(reqBackupDir.trim());
+  }
   return path.resolve(__dirname, '../../..', 'backups');
 }
 
@@ -54,7 +57,7 @@ async function getBackupStatus(req, res) {
     const settings = {};
     settingRows.forEach(row => { settings[row.key] = row.value; });
 
-    const backupDir = getBackupDir();
+    const backupDir = getBackupDir(settings.backup_dir);
     const files = scanBackupFiles(backupDir);
 
     res.json({
@@ -74,7 +77,7 @@ async function getBackupStatus(req, res) {
 
 async function createBackup(req, res) {
   try {
-    const backupDir = getBackupDir();
+    const backupDir = getBackupDir(req.body?.backup_dir);
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
@@ -123,7 +126,7 @@ async function restoreBackup(req, res) {
   if (!filename) return res.status(400).json({ error: 'filename is required' });
 
   try {
-    const backupDir = getBackupDir();
+    const backupDir = getBackupDir(req.body?.backup_dir);
     const backupPath = path.join(backupDir, filename);
     if (!fs.existsSync(backupPath)) return res.status(404).json({ error: 'Backup file not found' });
 
@@ -181,7 +184,7 @@ async function restoreBackup(req, res) {
 
 async function listBackups(req, res) {
   try {
-    const backupDir = getBackupDir();
+    const backupDir = getBackupDir(req.body?.backup_dir);
     const files = scanBackupFiles(backupDir);
     res.json(files);
   } catch (err) {
@@ -195,7 +198,7 @@ async function deleteBackup(req, res) {
   if (!filename) return res.status(400).json({ error: 'filename is required' });
 
   try {
-    const backupDir = getBackupDir();
+    const backupDir = getBackupDir(req.body?.backup_dir);
     const filepath = path.join(backupDir, filename);
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Backup file not found' });
     fs.unlinkSync(filepath);

@@ -8,5 +8,6 @@ router.post('/:id/payment', requireAuth, customerCredit.recordPayment);
 router.get('/:id/credit-history', requireAuth, customerCredit.getCustomerCreditHistory);
 router.get('/:id/credit-summary', requireAuth, customerCredit.getCustomerCreditSummary);
 router.post('/:id/adjust-credit', requireAuth, requireAdmin, customerCredit.adjustCredit);
+router.get('/credit/report', requireAuth, customerCredit.getCreditReport);
 
 module.exports = router;

@@ -155,6 +155,46 @@ async function getCustomerCreditSummary(req, res) {
   }
 }
 
+async function getCreditReport(req, res) {
+  try {
+    const [summaryRows] = await db.query(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN type = 'CREDIT_SALE' THEN amount ELSE 0 END), 0) as total_credit_sales,
+        COALESCE(SUM(CASE WHEN type = 'PAYMENT' THEN ABS(amount) ELSE 0 END), 0) as total_payments,
+        COALESCE(SUM(amount), 0) as total_outstanding,
+        COUNT(DISTINCT customer_id) as customers_with_credit
+       FROM customer_credit_transactions`
+    );
+
+    const [customerRows] = await db.query(
+      `SELECT id, name, phone, COALESCE(credit_balance, 0) as credit_balance,
+              (SELECT COUNT(*) FROM customer_credit_transactions WHERE customer_id = customers.id AND type = 'CREDIT_SALE') as credit_sales_count,
+              (SELECT COUNT(*) FROM customer_credit_transactions WHERE customer_id = customers.id AND type = 'PAYMENT') as payment_count,
+              (SELECT MAX(created_at) FROM customer_credit_transactions WHERE customer_id = customers.id) as last_transaction_date
+       FROM customers
+       WHERE is_active = 1
+       ORDER BY credit_balance DESC`
+    );
+
+    const [recentTransactions] = await db.query(
+      `SELECT cct.*, c.name as customer_name, c.phone as customer_phone
+       FROM customer_credit_transactions cct
+       JOIN customers c ON cct.customer_id = c.id
+       ORDER BY cct.created_at DESC
+       LIMIT 100`
+    );
+
+    res.json({
+      summary: summaryRows[0],
+      customers: customerRows,
+      recentTransactions,
+    });
+  } catch (err) {
+    console.error('[CREDIT] getCreditReport error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
 async function adjustCredit(req, res) {
   const { customer_id, amount, type, notes } = req.body;
   const processed_by = req.user.id;
@@ -203,4 +243,5 @@ module.exports = {
   getCustomerCreditHistory,
   getCustomerCreditSummary,
   adjustCredit,
+  getCreditReport,
 };

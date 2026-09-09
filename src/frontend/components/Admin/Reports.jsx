@@ -66,6 +66,7 @@ export default function Reports() {
         case 'profitloss': res = await api.get(`/reports/profit-loss${params}`); break;
         case 'category': res = await api.get(`/reports/category-sales${params}`); break;
         case 'users': res = await api.get(`/reports/user-activity${params}`); break;
+        case 'credit': res = await api.get('/customers/credit/report'); break;
         default: res = {};
       }
       setData(res);
@@ -148,6 +149,7 @@ export default function Reports() {
   { key: 'profitloss', label: 'Profit & Loss' },
   { key: 'category', label: 'Category Sales' },
   { key: 'users', label: 'User Activity' },
+  { key: 'credit', label: 'Credit Report' },
 ].map(tab => (
             <button
               key={tab.key}
@@ -259,8 +261,14 @@ class ErrorBoundary extends React.Component {
 function ReportContent({ tab, data, settings, medicines, users, batches, extraFilters, setExtraFilters, filters, markBatchExpired, expiryActionLoading, expiryActionMsg }) {
   if (!data) return null;
 
+  const fmt = (v) => parseFloat(v || 0).toFixed(0);
+  const fmtRs = (v) => `Rs. ${fmt(v)}`;
+  const safeData = data || {};
+  const summary = safeData.summary || {};
+  const items = safeData.items || [];
+
   if (tab === 'sales') {
-    const { summary, daily_trend, top_medicines, payment_breakdown, cashier_breakdown } = data;
+    const { daily_trend, top_medicines, payment_breakdown, cashier_breakdown } = safeData;
     const trendData = (daily_trend || []).map(d => ({
       date: d.date?.slice(5) || '',
       revenue: parseFloat(d.revenue || 0),
@@ -641,7 +649,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'margins') {
-    const { summary, items, period } = data || { summary: {}, items: [], period: {} };
+    const { summary = {}, items = [], period = {} } = safeData;
     const s = summary || {};
     const startDate = period?.start_date;
     const endDate = period?.end_date;
@@ -879,7 +887,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'purchases') {
-    const { items, totals, supplierSummary, pagination } = data || { items: [], totals: {}, supplierSummary: [], pagination: {} };
+    const { items = [], totals = {}, supplierSummary = [], pagination = {} } = safeData;
     return (
       <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -1013,7 +1021,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'movements') {
-    const { items, pagination, summary } = data || { items: [], pagination: {}, summary: [] };
+    const { items = [], pagination = {}, summary = [] } = safeData;
     const transactionTypes = ['PURCHASE', 'SALE', 'ADJUSTMENT', 'RETURN', 'EXPIRED'];
 
     const getTypeColor = (type) => {
@@ -1124,7 +1132,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'returns') {
-    const { items, pagination, summary } = data || { items: [], pagination: {}, summary: {} };
+    const { items = [], summary = {}, pagination = {} } = safeData;
 
     return (
       <div className="space-y-6">
@@ -1213,11 +1221,11 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                       <td className="p-3 font-medium">{item.medicine_name}</td>
                       <td className="p-3 font-mono text-gray-700">{item.batch_no || 'N/A'}</td>
                       <td className="p-3 text-right font-bold text-red-600">-{item.quantity_returned}</td>
-                      <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
-                      <td className="p-3 text-right">Rs. {parseFloat(item.purchase_rate_per_unit || 0).toFixed(2)}</td>
-                      <td className="p-3 text-right text-blue-600">Rs. {parseFloat(item.cogs_reversed || 0).toFixed(2)}</td>
-                      <td className="p-3 text-right font-bold text-red-600">Rs. {parseFloat(item.refund_amount || 0).toFixed(2)}</td>
-                      <td className="p-3 text-right text-purple-600">Rs. {parseFloat(item.profit_reversed || 0).toFixed(2)}</td>
+                      <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(0)}</td>
+                      <td className="p-3 text-right">Rs. {parseFloat(item.purchase_rate_per_unit || 0).toFixed(0)}</td>
+                      <td className="p-3 text-right text-blue-600">Rs. {parseFloat(item.cogs_reversed || 0).toFixed(0)}</td>
+                      <td className="p-3 text-right font-bold text-red-600">Rs. {parseFloat(item.refund_amount || 0).toFixed(0)}</td>
+                      <td className="p-3 text-right text-purple-600">Rs. {parseFloat(item.profit_reversed || 0).toFixed(0)}</td>
                       <td className="p-3 text-gray-600">{item.processed_by_name || '-'}</td>
                       <td className="p-3 text-gray-600 text-xs">{item.reason || '-'}</td>
                     </tr>
@@ -1232,7 +1240,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'profitloss') {
-    const { summary, daily_trend, period } = data || { summary: {}, daily_trend: [], period: {} };
+    const { summary = {}, daily_trend = [], period = {} } = safeData;
     const s = summary || {};
     const startDate = period?.start_date || s.start_date;
     const endDate = period?.end_date || s.end_date;
@@ -1393,7 +1401,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'category') {
-    const { summary, categories } = data || { summary: {}, categories: [] };
+    const { summary = {}, categories = [] } = safeData;
     const s = summary || {};
     const topCategory = categories?.[0];
 
@@ -1537,7 +1545,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'users') {
-    const { summary, users } = data || { summary: {}, users: [] };
+    const { summary = {}, users = [] } = safeData;
     const s = summary || {};
 
     const [sortField, setSortField] = useState('revenue');
@@ -1654,9 +1662,8 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                     const hasInv = invKeys.length > 0;
                     const isSelected = selectedUser === u.user_id;
                     return (
-                      <>
+                      <React.Fragment key={i}>
                         <tr
-                          key={i}
                           className={`border-t hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
                           onClick={() => handleUserClick(u.user_id)}
                         >
@@ -1746,7 +1753,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -1771,7 +1778,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
   }
 
   if (tab === 'audit') {
-    const { items, pagination, actionSummary } = data || { items: [], pagination: {}, actionSummary: [] };
+    const { items = [], pagination = {}, actionSummary = [] } = safeData;
 
     const actionColors = {
       LOGIN: 'bg-blue-100 text-blue-800',
@@ -1909,6 +1916,104 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (tab === 'credit') {
+    const { summary = {}, customers = [], recentTransactions = [] } = safeData;
+    const s = summary || {};
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h4 className="font-semibold text-gray-800 text-lg">Credit Report</h4>
+              <p className="text-sm text-gray-500">Customer credit balances, payments, and outstanding amounts</p>
+            </div>
+            <button onClick={() => exportToExcel((customers || []).map(c => ({ name: c.name, phone: c.phone, credit_balance: c.credit_balance, credit_sales: c.credit_sales_count, payments: c.payment_count, last_transaction: c.last_transaction_date })), 'credit-report', ['name', 'phone', 'credit_balance', 'credit_sales', 'payments', 'last_transaction'])} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">Export</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <MiniStat label="Total Outstanding" value={`Rs. ${parseFloat(s.total_outstanding || 0).toFixed(0)}`} color="red" />
+            <MiniStat label="Total Payments" value={`Rs. ${parseFloat(s.total_payments || 0).toFixed(0)}`} color="green" />
+            <MiniStat label="Customers with Credit" value={s.customers_with_credit || 0} />
+            <MiniStat label="Net Credit Exposure" value={`Rs. ${parseFloat(s.total_outstanding || 0).toFixed(0)}`} />
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="p-4 border-b bg-gray-50">
+              <h5 className="font-semibold text-gray-700">Customer Credit Balances</h5>
+            </div>
+            {(customers || []).length === 0 ? (
+              <div className="text-center py-12 text-gray-500">No credit customers found</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left p-3 font-medium text-gray-600">Customer</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Phone</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Credit Balance</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Credit Sales</th>
+                      <th className="text-right p-3 font-medium text-gray-600">Payments</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Last Transaction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customers.map((c, i) => (
+                      <tr key={i} className="border-t hover:bg-gray-50">
+                        <td className="p-3 font-medium">{c.name}</td>
+                        <td className="p-3 text-gray-600">{c.phone}</td>
+                        <td className={`p-3 text-right font-medium ${parseFloat(c.credit_balance || 0) > 0 ? 'text-red-600' : 'text-gray-500'}`}>Rs. {parseFloat(c.credit_balance || 0).toFixed(0)}</td>
+                        <td className="p-3 text-right text-gray-600">{c.credit_sales_count || 0}</td>
+                        <td className="p-3 text-right text-green-600">{c.payment_count || 0}</td>
+                        <td className="p-3 text-gray-500">{c.last_transaction_date ? new Date(c.last_transaction_date).toLocaleDateString('en-PK') : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <h5 className="font-semibold text-gray-700 mb-3">Recent Credit Transactions</h5>
+          {(recentTransactions || []).length === 0 ? (
+            <p className="text-center text-gray-500 py-6 text-sm">No credit transactions found</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-2 font-medium text-gray-600">Date</th>
+                    <th className="text-left p-2 font-medium text-gray-600">Customer</th>
+                    <th className="text-left p-2 font-medium text-gray-600">Type</th>
+                    <th className="text-right p-2 font-medium text-gray-600">Amount</th>
+                    <th className="text-right p-2 font-medium text-gray-600">Balance After</th>
+                    <th className="text-left p-2 font-medium text-gray-600">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentTransactions.map((tx, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="p-2 text-xs">{tx.created_at ? new Date(tx.created_at).toLocaleString('en-GB') : '-'}</td>
+                      <td className="p-2">{tx.customer_name || '-'}</td>
+                      <td className="p-2">
+                        <span className={`text-xs px-2 py-0.5 rounded ${tx.type === 'PAYMENT' ? 'bg-green-100 text-green-700' : tx.type === 'CREDIT_SALE' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{tx.type}</span>
+                      </td>
+                      <td className={`p-2 text-right font-medium ${tx.type === 'PAYMENT' ? 'text-green-600' : 'text-red-600'}`}>Rs. {parseFloat(tx.amount || 0).toFixed(0)}</td>
+                      <td className="p-2 text-right text-xs">Rs. {parseFloat(tx.balance_after || 0).toFixed(0)}</td>
+                      <td className="p-2 text-xs text-gray-600">{tx.notes || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     );
   }

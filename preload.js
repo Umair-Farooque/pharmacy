@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPrinters: () => {
     return ipcRenderer.invoke('get-printers');
   },
+  selectBackupDir: () => {
+    return ipcRenderer.invoke('select-backup-dir');
+  },
 });
 
 ipcRenderer.on('restart-app', () => {
