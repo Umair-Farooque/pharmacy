@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectBackupDir: () => {
     return ipcRenderer.invoke('select-backup-dir');
   },
+  selectSqlFile: () => {
+    return ipcRenderer.invoke('select-sql-file');
+  },
+  scheduleRestore: (filePath) => {
+    return ipcRenderer.invoke('schedule-restore', filePath);
+  },
 });
 
 ipcRenderer.on('restart-app', () => {

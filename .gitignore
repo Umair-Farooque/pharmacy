@@ -9,6 +9,10 @@ dist/
 *.rpm
 *.deb
 
+# Bundled Node runtime
+tools/node/
+tools/node-portable.zip
+
 # Electron builder cache
 .electron-builder-cache/
 

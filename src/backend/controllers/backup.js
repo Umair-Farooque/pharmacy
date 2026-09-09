@@ -122,12 +122,12 @@ async function createBackup(req, res) {
 }
 
 async function restoreBackup(req, res) {
-  const { filename } = req.body;
-  if (!filename) return res.status(400).json({ error: 'filename is required' });
+  const { filename, file_path } = req.body;
+  if (!filename && !file_path) return res.status(400).json({ error: 'filename or file_path is required' });
 
   try {
     const backupDir = getBackupDir(req.body?.backup_dir);
-    const backupPath = path.join(backupDir, filename);
+    const backupPath = file_path ? path.resolve(file_path) : path.join(backupDir, filename);
     if (!fs.existsSync(backupPath)) return res.status(404).json({ error: 'Backup file not found' });
 
     const safetyTimestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);

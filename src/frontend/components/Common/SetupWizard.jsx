@@ -19,6 +19,7 @@ export default function SetupWizard() {
   const [testResult, setTestResult] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [restoreSqlPath, setRestoreSqlPath] = useState('');
 
   useEffect(() => {
     if (window.electronAPI && window.electronAPI.getConfig) {
@@ -86,6 +87,10 @@ export default function SetupWizard() {
         }
       }
 
+      if (isServer && restoreSqlPath && window.electronAPI?.scheduleRestore) {
+        await window.electronAPI.scheduleRestore(restoreSqlPath);
+      }
+
       if (isServer && config.adminPassword) {
         await api.post('/auth/setup-admin', { password: config.adminPassword });
       }
@@ -109,7 +114,7 @@ export default function SetupWizard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">🏥 Pharmacy Management</h1>
+          <h1 className="text-3xl font-bold text-gray-800">Al-Hafiz Pharmacy</h1>
           <p className="text-gray-500 mt-2">Setup Wizard - Step {step} of 3</p>
         </div>
 
@@ -240,6 +245,49 @@ export default function SetupWizard() {
                     onChange={e => setConfig({ ...config, shopName: e.target.value })}
                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                   />
+                </div>
+
+                <div className="border-t pt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Database Setup</label>
+                  <div className="flex gap-3 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setRestoreSqlPath('')}
+                      className={`flex-1 py-2 border rounded-lg text-sm font-medium ${!restoreSqlPath ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      Create New Database
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (window.electronAPI?.selectSqlFile) {
+                          const file = await window.electronAPI.selectSqlFile();
+                          if (file) setRestoreSqlPath(file);
+                        } else {
+                          alert('SQL file selection is only available in the desktop app');
+                        }
+                      }}
+                      className={`flex-1 py-2 border rounded-lg text-sm font-medium ${restoreSqlPath ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      Restore Existing Database
+                    </button>
+                  </div>
+                  {restoreSqlPath && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm text-green-800 font-medium">Selected backup file:</p>
+                      <p className="text-xs text-green-700 break-all mt-1">{restoreSqlPath}</p>
+                      <button
+                        type="button"
+                        onClick={() => setRestoreSqlPath('')}
+                        className="text-xs text-red-600 hover:text-red-700 mt-2"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
+                  {!restoreSqlPath && (
+                    <p className="text-xs text-gray-500">A new pharmacy database will be created automatically.</p>
+                  )}
                 </div>
               </>
             ) : (

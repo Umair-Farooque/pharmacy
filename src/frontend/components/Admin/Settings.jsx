@@ -18,6 +18,7 @@ export default function Settings() {
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
   const [customBackupDir, setCustomBackupDir] = useState('');
+  const [sqlFilePath, setSqlFilePath] = useState('');
 
   useEffect(() => {
     api.get('/settings').then(setSettings).catch(console.error).finally(() => setLoading(false));
@@ -73,14 +74,21 @@ export default function Settings() {
   };
 
   const handleRestore = async () => {
-    if (!restoreFilename) return;
+    if (!restoreFilename && !sqlFilePath) return;
     setRestoreLoading(true);
     setBackupError('');
     try {
-      await api.post('/backup/restore', { filename: restoreFilename });
+      const payload = {};
+      if (sqlFilePath) {
+        payload.file_path = sqlFilePath;
+      } else {
+        payload.filename = restoreFilename;
+      }
+      await api.post('/backup/restore', payload);
       setBackupSuccess('Database restored successfully. The application will reload.');
       setShowRestoreModal(false);
       setRestoreFilename('');
+      setSqlFilePath('');
       setTimeout(() => window.location.reload(), 2000);
     } catch (err) {
       setBackupError(err.message || 'Restore failed');
@@ -228,12 +236,26 @@ export default function Settings() {
               <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{backupStatus?.backup_count || 0} files</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={handleBackupNow} disabled={backingUp} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
               {backingUp ? 'Creating Backup...' : 'Backup Now'}
             </button>
             <button onClick={() => { setShowRestoreModal(true); loadBackupStatus(); }} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium">
               Restore Database
+            </button>
+            <button type="button" onClick={async () => {
+              if (window.electronAPI?.selectSqlFile) {
+                const file = await window.electronAPI.selectSqlFile();
+                if (file) {
+                  setSqlFilePath(file);
+                  setBackupSuccess(`Selected: ${file}`);
+                  setTimeout(() => setBackupSuccess(''), 3000);
+                }
+              } else {
+                alert('SQL file selection is only available in the desktop app');
+              }
+            }} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">
+              Load SQL File
             </button>
           </div>
           {backups.length > 0 && (
@@ -289,35 +311,44 @@ export default function Settings() {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="font-semibold text-lg text-red-700">⚠️ Restore Database</h3>
-              <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setBackupError(''); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+              <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setSqlFilePath(''); setBackupError(''); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
             <div className="p-4 space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                 <p className="text-sm text-red-800 font-medium">Warning: This will replace all current data!</p>
                 <p className="text-xs text-red-600 mt-1">All existing records will be permanently lost. A safety backup will be created automatically before restoring.</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Backup to Restore</label>
-                <div className="max-h-48 overflow-y-auto border rounded-lg">
-                  {backups.length === 0 ? (
-                    <p className="p-4 text-center text-gray-500 text-sm">No backups available</p>
-                  ) : (
-                    backups.map(b => (
-                      <label key={b.filename} className={`flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${restoreFilename === b.filename ? 'bg-blue-50' : ''}`}>
-                        <input type="radio" name="restore" value={b.filename} checked={restoreFilename === b.filename} onChange={e => setRestoreFilename(e.target.value)} className="text-blue-600" />
-                        <div>
-                          <p className="text-sm font-medium">{b.filename}</p>
-                          <p className="text-xs text-gray-500">{fmtDate(b.created_at)} · {fmtSize(b.size)}</p>
-                        </div>
-                      </label>
-                    ))
-                  )}
+
+              {!sqlFilePath ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Backup to Restore</label>
+                  <div className="max-h-48 overflow-y-auto border rounded-lg">
+                    {backups.length === 0 ? (
+                      <p className="p-4 text-center text-gray-500 text-sm">No backups available</p>
+                    ) : (
+                      backups.map(b => (
+                        <label key={b.filename} className={`flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${restoreFilename === b.filename ? 'bg-blue-50' : ''}`}>
+                          <input type="radio" name="restore" value={b.filename} checked={restoreFilename === b.filename} onChange={e => setRestoreFilename(e.target.value)} className="text-blue-600" />
+                          <div>
+                            <p className="text-sm font-medium">{b.filename}</p>
+                            <p className="text-xs text-gray-500">{fmtDate(b.created_at)} · {fmtSize(b.size)}</p>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-green-800">External SQL file selected</p>
+                  <p className="text-xs text-green-700 mt-1 break-all">{sqlFilePath}</p>
+                </div>
+              )}
+
               {backupError && <p className="text-red-500 text-sm">{backupError}</p>}
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setBackupError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-                <button onClick={handleRestore} disabled={restoreLoading || !restoreFilename} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium disabled:opacity-50">
+                <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setSqlFilePath(''); setBackupError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={handleRestore} disabled={restoreLoading || (!restoreFilename && !sqlFilePath)} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium disabled:opacity-50">
                   {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
                 </button>
               </div>

@@ -2,10 +2,12 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { spawn } = require('child_process');
 const { PosPrinter } = require('electron-pos-printer');
 
 let mainWindow;
 let serverProcess;
+let pendingRestorePath = null;
 
 function getConfigPath() {
   const isProd = app.isPackaged;
@@ -13,6 +15,16 @@ function getConfigPath() {
     return path.join(app.getPath('userData'), 'config.env');
   }
   return path.join(__dirname, '.env');
+}
+
+function getBundledNodePath() {
+  if (!app.isPackaged) return 'node';
+  return path.join(process.resourcesPath, 'app', 'tools', 'node', 'node.exe');
+}
+
+function getPublicDir() {
+  if (!app.isPackaged) return path.join(__dirname, '..', 'public');
+  return path.join(process.resourcesPath, 'app', 'public');
 }
 
 function loadConfig() {
@@ -47,21 +59,38 @@ function startServer() {
     ? path.join(process.resourcesPath, 'app', 'src', 'backend', 'server.js')
     : path.join(__dirname, 'src', 'backend', 'server.js');
 
-  const serverEnv = { ...process.env, PORT: '3000' };
+  const nodePath = getBundledNodePath();
+  const publicDir = getPublicDir();
+  const serverEnv = {
+    ...process.env,
+    PORT: '3000',
+    PUBLIC_DIR: publicDir,
+  };
 
-  serverProcess = require('child_process').spawn('node', [serverPath], {
+  const args = [serverPath];
+  const options = {
     cwd: isProd ? path.join(process.resourcesPath, 'app') : __dirname,
-    stdio: 'inherit',
     env: serverEnv,
+    stdio: 'inherit',
     detached: false,
-  });
+  };
+
+  if (isProd) {
+    console.log('[ELECTRON] Starting backend with bundled Node:', nodePath);
+  }
+
+  serverProcess = spawn(nodePath, args, options);
 
   serverProcess.on('error', (err) => {
     console.error('[ELECTRON] Server error:', err.message);
   });
+
+  serverProcess.on('exit', (code, signal) => {
+    console.error(`[ELECTRON] Server exited with code ${code} signal ${signal}`);
+  });
 }
 
-function waitForServer(url, timeout = 20000) {
+function waitForServer(url, timeout = 30000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
@@ -69,12 +98,36 @@ function waitForServer(url, timeout = 20000) {
         if (res.statusCode === 200) resolve();
         else setTimeout(check, 500);
       }).on('error', () => {
-        if (Date.now() - start > timeout) reject(new Error('Server timeout'));
-        else setTimeout(check, 500);
+        if (Date.now() - start > timeout) {
+          reject(new Error(`Server timeout after ${timeout}ms`));
+        } else {
+          setTimeout(check, 500);
+        }
       });
     };
     check();
   });
+}
+
+async function tryRestoreIfPending() {
+  if (!pendingRestorePath || !fs.existsSync(pendingRestorePath)) return;
+  const filePath = pendingRestorePath;
+  pendingRestorePath = null;
+  try {
+    const res = await fetch(`${getServerUrl()}/api/backup/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: filePath }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('[RESTORE] Failed:', data.error || res.statusText);
+    } else {
+      console.log('[RESTORE] Completed');
+    }
+  } catch (err) {
+    console.error('[RESTORE] Error:', err.message);
+  }
 }
 
 function createWindow() {
@@ -110,6 +163,7 @@ app.whenReady().then(async () => {
     try {
       await waitForServer(`${getServerUrl()}/api/health`);
       console.log('[ELECTRON] Backend ready');
+      await tryRestoreIfPending();
       createWindow();
     } catch (err) {
       console.error('[ELECTRON] Backend failed to start:', err.message);
@@ -126,12 +180,16 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (serverProcess) serverProcess.kill();
+  if (serverProcess) {
+    try { serverProcess.kill(); } catch (e) {}
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-  if (serverProcess) serverProcess.kill();
+  if (serverProcess) {
+    try { serverProcess.kill(); } catch (e) {}
+  }
 });
 
 ipcMain.handle('select-backup-dir', async () => {
@@ -139,6 +197,16 @@ ipcMain.handle('select-backup-dir', async () => {
     title: 'Select Backup Directory',
     properties: ['openDirectory', 'createDirectory'],
     buttonLabel: 'Select Folder',
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('select-sql-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select SQL Backup File',
+    filters: [{ name: 'SQL Files', extensions: ['sql'] }],
+    properties: ['openFile'],
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
@@ -193,6 +261,11 @@ ipcMain.handle('get-server-ip', () => {
     return match ? match[1].trim() : null;
   }
   return null;
+});
+
+ipcMain.handle('schedule-restore', (event, filePath) => {
+  pendingRestorePath = filePath;
+  return { success: true };
 });
 
 ipcMain.on('restart-app', () => {

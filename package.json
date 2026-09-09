@@ -10,8 +10,8 @@
     "server": "node src/backend/server.js",
     "dev": "concurrently \"npm run server\" \"electron .\"",
     "build": "node scripts/build-frontend.js",
-    "build:win": "electron-builder --win",
-    "build:server": "electron-builder --win --dir"
+    "build:win": "node scripts/download-node.js && electron-builder --win",
+    "download-node": "node scripts/download-node.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -44,19 +44,35 @@
     "appId": "com.pharmacy.management",
     "productName": "Al-Hafiz Pharmacy",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
-    "win": {
-      "target": "portable"
-    },
-    "forceCodeSigning": false,
     "files": [
       "electron.js",
       "preload.js",
       "src/**/*",
-      "public/**/*"
+      "public/**/*",
+      "tools/node/**/*"
     ],
     "asar": false,
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Al-Hafiz Pharmacy",
+      "deleteAppDataOnUninstall": false
+    },
     "extraResources": []
   },
   "allowScripts": {

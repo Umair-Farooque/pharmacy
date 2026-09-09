@@ -61,7 +61,7 @@ async function startServer() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  const publicDir = path.join(__dirname, '../../public');
+  const publicDir = process.env.PUBLIC_DIR || path.join(__dirname, '../../public');
   app.use(express.static(publicDir));
   app.get('*', (req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
@@ -77,13 +77,22 @@ async function startServer() {
   global.io = io;
 
   const PORT = process.env.PORT || 3001;
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SERVER] Pharmacy app running on http://localhost:${PORT}`);
-    console.log(`[SERVER] API: http://localhost:${PORT}/api`);
+  return new Promise((resolve, reject) => {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`[SERVER] Pharmacy app running on http://localhost:${PORT}`);
+      console.log(`[SERVER] API: http://localhost:${PORT}/api`);
+      resolve(server);
+    });
+    server.on('error', reject);
   });
 }
 
-startServer().catch(err => {
-  console.error('[SERVER] Failed to start:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  startServer().catch(err => {
+    console.error('[SERVER] Failed to start:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { startServer };
+
