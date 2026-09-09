@@ -32,6 +32,15 @@ function isServerMode() {
   return process.env.USE_MYSQL === 'true';
 }
 
+function getServerUrl() {
+  if (isServerMode()) {
+    return 'http://localhost:3000';
+  }
+  const serverIp = process.env.SERVER_IP || 'localhost';
+  const port = process.env.PORT || '3000';
+  return `http://${serverIp}:${port}`;
+}
+
 function startServer() {
   const isProd = app.isPackaged;
   const serverPath = isProd
@@ -81,7 +90,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL('http://localhost:3000');
+  mainWindow.loadURL(getServerUrl());
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDesc) => {
     console.error('[ELECTRON] Failed to load:', errorCode, errorDesc);
@@ -99,7 +108,7 @@ app.whenReady().then(async () => {
     console.log('[ELECTRON] Server mode - starting backend');
     startServer();
     try {
-      await waitForServer('http://localhost:3000/api/health');
+      await waitForServer(`${getServerUrl()}/api/health`);
       console.log('[ELECTRON] Backend ready');
       createWindow();
     } catch (err) {

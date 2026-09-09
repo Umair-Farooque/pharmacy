@@ -1,5 +1,5 @@
 const db = require('../db');
-const { logAudit } = require('../middleware');
+const { logAudit, captureBeforeAfter, logAuditWithBeforeAfter } = require('../middleware');
 
 async function listMedicines(req, res) {
   try {
@@ -86,14 +86,22 @@ async function createMedicine(req, res) {
 
 async function updateMedicine(req, res) {
   const { name, generic_name, category, manufacturer, rack_id, pack_size, reorder_level, tax_rate, barcode } = req.body;
+  const changedFields = ['name', 'generic_name', 'category', 'manufacturer', 'rack_id', 'pack_size', 'reorder_level', 'tax_rate', 'barcode'];
   try {
+    const before = await captureBeforeAfter('medicines', req.params.id, changedFields);
     await db.query(
       `UPDATE medicines SET name=?, generic_name=?, category=?, manufacturer=?, rack_id=?,
        pack_size=?, reorder_level=?, tax_rate=?, barcode=? WHERE id=?`,
       [name, generic_name || null, category || null, manufacturer || null, rack_id || null,
        pack_size || null, reorder_level || 10, tax_rate || 0, barcode || null, req.params.id]
     );
-    await logAudit(req.user.id, 'MEDICINE_UPDATED', 'medicines', req.params.id, { name });
+    const after = {
+      name, generic_name: generic_name || null, category: category || null,
+      manufacturer: manufacturer || null, rack_id: rack_id || null,
+      pack_size: pack_size || null, reorder_level: reorder_level || 10,
+      tax_rate: tax_rate || 0, barcode: barcode || null,
+    };
+    await logAuditWithBeforeAfter(req.user.id, 'MEDICINE_UPDATED', 'medicines', req.params.id, before, after);
     res.json({ message: 'Medicine updated' });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Barcode already exists' });
@@ -104,11 +112,14 @@ async function updateMedicine(req, res) {
 async function updateMedicinePrice(req, res) {
   const { selling_rate_per_unit } = req.body;
   try {
+    const before = await captureBeforeAfter('medicines', req.params.id, ['current_selling_price']);
     await db.query(
       `UPDATE medicines SET current_selling_price = ? WHERE id = ?`,
       [selling_rate_per_unit, req.params.id]
     );
-    await logAudit(req.user.id, 'MEDICINE_PRICE_UPDATED', 'medicines', req.params.id, { selling_rate_per_unit });
+    await logAuditWithBeforeAfter(req.user.id, 'MEDICINE_PRICE_UPDATED', 'medicines', req.params.id,
+      { selling_rate_per_unit: before ? before.current_selling_price : null },
+      { selling_rate_per_unit });
     res.json({ message: 'Price updated' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

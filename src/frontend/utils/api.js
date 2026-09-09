@@ -8,31 +8,66 @@ function getApiBase() {
     : '/api';
 }
 
+function generateRequestId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+const BILLING_ENDPOINTS = new Set([
+  '/sales',
+  '/sales/return',
+  '/customers',
+]);
+
 class ApiClient {
   getToken() {
     return localStorage.getItem('token');
   }
 
   async request(method, endpoint, body = null) {
-    const headers = { 'Content-Type': 'application/json' };
-    const token = this.getToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const isBilling = BILLING_ENDPOINTS.has(endpoint.split('?')[0]);
+    const maxRetries = isBilling ? 2 : 0;
+    let lastError = null;
 
-    const config = { method, headers };
-    if (body) config.body = JSON.stringify(body);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        const token = this.getToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (method === 'POST') {
+          headers['X-Request-ID'] = generateRequestId();
+        }
 
-    const response = await fetch(`${getApiBase()}${endpoint}`, config);
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        const config = { method, headers };
+        if (body) config.body = JSON.stringify(body);
+
+        const response = await fetch(`${getApiBase()}${endpoint}`, config);
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(`Server error: ${response.status} ${response.statusText}`);
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || `Request failed: ${response.status}`);
+        }
+        return data;
+      } catch (err) {
+        lastError = err;
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 4000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
 
-    if (!response.ok) {
-      throw new Error(data.error || `Request failed: ${response.status}`);
+    if (lastError && (lastError.message.includes('Server error') || lastError.message.includes('Request failed'))) {
+      throw new Error('Operation failed after multiple attempts. Please try again or contact support.');
     }
-    return data;
+    throw lastError;
   }
 
   get(endpoint) { return this.request('GET', endpoint); }

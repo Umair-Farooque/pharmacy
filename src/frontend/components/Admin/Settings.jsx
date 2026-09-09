@@ -8,12 +8,38 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [printers, setPrinters] = useState([]);
 
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [backups, setBackups] = useState([]);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupError, setBackupError] = useState('');
+  const [backupSuccess, setBackupSuccess] = useState('');
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreFilename, setRestoreFilename] = useState('');
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+
   useEffect(() => {
     api.get('/settings').then(setSettings).catch(console.error).finally(() => setLoading(false));
     if (window.electronAPI && window.electronAPI.getPrinters) {
       window.electronAPI.getPrinters().then(setPrinters).catch(() => {});
     }
+    loadBackupStatus();
   }, []);
+
+  const loadBackupStatus = async () => {
+    try {
+      const status = await api.get('/backup/status');
+      setBackupStatus(status);
+    } catch (err) {
+      console.error('Backup status error:', err);
+    }
+    try {
+      const list = await api.get('/backup/list');
+      setBackups(list || []);
+    } catch (err) {
+      console.error('Backup list error:', err);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -28,9 +54,60 @@ export default function Settings() {
     }
   };
 
+  const handleBackupNow = async () => {
+    setBackingUp(true);
+    setBackupError('');
+    setBackupSuccess('');
+    try {
+      await api.post('/backup/create', {});
+      setBackupSuccess('Backup started successfully');
+      setTimeout(() => setBackupSuccess(''), 3000);
+      setTimeout(loadBackupStatus, 2000);
+    } catch (err) {
+      setBackupError(err.message || 'Backup failed');
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoreFilename) return;
+    setRestoreLoading(true);
+    setBackupError('');
+    try {
+      await api.post('/backup/restore', { filename: restoreFilename });
+      setBackupSuccess('Database restored successfully. The application will reload.');
+      setShowRestoreModal(false);
+      setRestoreFilename('');
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      setBackupError(err.message || 'Restore failed');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  const handleDeleteBackup = async (filename) => {
+    if (!confirm(`Delete backup ${filename}?`)) return;
+    try {
+      await api.delete(`/backup/${encodeURIComponent(filename)}`);
+      loadBackupStatus();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
 
   const update = (key, value) => setSettings(s => ({ ...s, [key]: value }));
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Never';
+  const fmtSize = (bytes) => {
+    if (!bytes) return '—';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -118,6 +195,56 @@ export default function Settings() {
         </div>
 
         <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">Backup & Restore</h3>
+          {backupError && <p className="text-red-500 text-sm mb-3">{backupError}</p>}
+          {backupSuccess && <p className="text-green-600 text-sm mb-3">{backupSuccess}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Backup Directory</label>
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{backupStatus?.backup_dir || 'backups/'}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Retention Count</label>
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{backupStatus?.retention_count || 30} backups</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Backup</label>
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{fmtDate(backupStatus?.last_backup_at)}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Total Backups</label>
+              <p className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border">{backupStatus?.backup_count || 0} files</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleBackupNow} disabled={backingUp} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50">
+              {backingUp ? 'Creating Backup...' : 'Backup Now'}
+            </button>
+            <button onClick={() => { setShowRestoreModal(true); loadBackupStatus(); }} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium">
+              Restore Database
+            </button>
+          </div>
+          {backups.length > 0 && (
+            <div className="mt-4 border rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2 border-b">
+                <p className="text-sm font-medium text-gray-700">Available Backups</p>
+              </div>
+              <div className="max-h-40 overflow-y-auto">
+                {backups.map(b => (
+                  <div key={b.filename} className="flex items-center justify-between px-4 py-2 border-b last:border-b-0 hover:bg-gray-50">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{b.filename}</p>
+                      <p className="text-xs text-gray-500">{fmtDate(b.created_at)} · {fmtSize(b.size)}</p>
+                    </div>
+                    <button onClick={() => handleDeleteBackup(b.filename)} className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">Delete</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t pt-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Printer</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -144,6 +271,48 @@ export default function Settings() {
           {saved && <span className="text-green-600 font-medium">Settings saved!</span>}
         </div>
       </div>
+
+      {showRestoreModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-lg text-red-700">⚠️ Restore Database</h3>
+              <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setBackupError(''); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p className="text-sm text-red-800 font-medium">Warning: This will replace all current data!</p>
+                <p className="text-xs text-red-600 mt-1">All existing records will be permanently lost. A safety backup will be created automatically before restoring.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Backup to Restore</label>
+                <div className="max-h-48 overflow-y-auto border rounded-lg">
+                  {backups.length === 0 ? (
+                    <p className="p-4 text-center text-gray-500 text-sm">No backups available</p>
+                  ) : (
+                    backups.map(b => (
+                      <label key={b.filename} className={`flex items-center gap-3 px-4 py-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${restoreFilename === b.filename ? 'bg-blue-50' : ''}`}>
+                        <input type="radio" name="restore" value={b.filename} checked={restoreFilename === b.filename} onChange={e => setRestoreFilename(e.target.value)} className="text-blue-600" />
+                        <div>
+                          <p className="text-sm font-medium">{b.filename}</p>
+                          <p className="text-xs text-gray-500">{fmtDate(b.created_at)} · {fmtSize(b.size)}</p>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              {backupError && <p className="text-red-500 text-sm">{backupError}</p>}
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setShowRestoreModal(false); setRestoreFilename(''); setBackupError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={handleRestore} disabled={restoreLoading || !restoreFilename} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium disabled:opacity-50">
+                  {restoreLoading ? 'Restoring...' : 'Confirm Restore'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

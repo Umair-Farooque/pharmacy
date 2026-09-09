@@ -318,7 +318,7 @@ async function getExpiryAlerts(req, res) {
     const alertDays = parseInt(days) || 60;
 
     const [rows] = await db.query(`
-      SELECT m.name, m.category, sb.batch_no, sb.quantity_in_stock,
+      SELECT sb.id, m.name, m.category, sb.batch_no, sb.quantity_in_stock,
         sb.expiry_date, sb.purchase_rate_per_unit, m.current_selling_price as selling_rate_per_unit,
         DATEDIFF(sb.expiry_date, CURDATE()) as days_remaining,
         s.name as supplier_name

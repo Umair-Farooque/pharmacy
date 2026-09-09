@@ -9,6 +9,8 @@ export default function Navbar({ currentPage, onNavigate, onLogout }) {
     { key: 'inventory', label: 'Inventory' },
     { key: 'customers', label: 'Customers' },
     { key: 'reports', label: 'Reports' },
+    { key: 'purchase-invoices', label: 'Purchase Invoices' },
+    { key: 'supplier-returns', label: 'Supplier Returns' },
     { key: 'users', label: 'Users' },
     { key: 'settings', label: 'Settings' },
   ];

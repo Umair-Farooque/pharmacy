@@ -32,6 +32,19 @@ export default function Billing({ onNavigate }) {
   const [refundSuccess, setRefundSuccess] = useState(null);
   const [savedCarts, setSavedCarts] = useState([]);
 
+  const [creditOpen, setCreditOpen] = useState(false);
+  const [creditSearchTerm, setCreditSearchTerm] = useState('');
+  const [creditSearchResults, setCreditSearchResults] = useState([]);
+  const [selectedCreditCustomer, setSelectedCreditCustomer] = useState(null);
+  const [creditBalance, setCreditBalance] = useState(null);
+  const [creditHistory, setCreditHistory] = useState([]);
+  const [creditLoading, setCreditLoading] = useState(false);
+  const [creditPaymentAmount, setCreditPaymentAmount] = useState('');
+  const [creditPaymentNotes, setCreditPaymentNotes] = useState('');
+  const [creditSubmitting, setCreditSubmitting] = useState(false);
+  const [creditError, setCreditError] = useState('');
+  const [creditSuccess, setCreditSuccess] = useState('');
+
   const searchRef = useRef(null);
   const quantityRef = useRef(null);
   const billLookupRef = useRef(null);
@@ -270,8 +283,7 @@ export default function Billing({ onNavigate }) {
       }
 
       if (awaitingServiceCharge) {
-        setAwaitingServiceCharge(false);
-        document.getElementById('serviceChargeInput')?.focus();
+        setTimeout(() => document.getElementById('serviceChargeInput')?.focus(), 50);
         return;
       }
 
@@ -315,7 +327,41 @@ export default function Billing({ onNavigate }) {
   const handleServiceChargeKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      quantityRef.current?.focus();
+      const qty = parseInt(quantityInput);
+      if (!qty || qty <= 0) {
+        alert('Please enter a valid quantity');
+        return;
+      }
+      if (pendingMedicine && qty > pendingMedicine.total_stock) {
+        alert(`Only ${pendingMedicine.total_stock} units available`);
+        return;
+      }
+      const medicine = pendingMedicine;
+      const existing = cart.find(item => item.medicine_id === medicine.id);
+      if (existing) {
+        const newQty = existing.quantity + qty;
+        if (newQty > medicine.total_stock) {
+          alert(`Cannot add more than available stock. Current: ${existing.quantity}, Added: ${qty}, Available: ${medicine.total_stock}`);
+          return;
+        }
+        setCart(cart.map(item => item.medicine_id === medicine.id ? { ...item, quantity: newQty } : item));
+      } else {
+        setCart([...cart, {
+          medicine_id: medicine.id,
+          name: medicine.name,
+          quantity: qty,
+          selling_rate_per_unit: parseFloat(medicine.selling_rate_per_unit) || 0,
+          stock: medicine.total_stock,
+          service_charge: parseFloat(serviceCharge) || 0,
+        }]);
+      }
+      setPendingMedicine(null);
+      setQuantityInput('');
+      setServiceCharge('');
+      setAwaitingServiceCharge(false);
+      setSearchResults([]);
+      setSearchTerm('');
+      setTimeout(() => searchRef.current?.focus(), 50);
     } else if (e.key === 'Escape') {
       setPendingMedicine(null);
       setQuantityInput('');
@@ -542,6 +588,91 @@ export default function Billing({ onNavigate }) {
     return refundBill.items.filter(item => item.is_returnable);
   };
 
+  const openCreditModal = () => {
+    setCreditOpen(true);
+    setCreditSearchTerm('');
+    setCreditSearchResults([]);
+    setSelectedCreditCustomer(null);
+    setCreditBalance(null);
+    setCreditHistory([]);
+    setCreditError('');
+    setCreditSuccess('');
+    setCreditPaymentAmount('');
+    setCreditPaymentNotes('');
+  };
+
+  const closeCreditModal = () => {
+    setCreditOpen(false);
+    setCreditSearchTerm('');
+    setCreditSearchResults([]);
+    setSelectedCreditCustomer(null);
+    setCreditBalance(null);
+    setCreditHistory([]);
+    setCreditError('');
+    setCreditSuccess('');
+    setCreditPaymentAmount('');
+    setCreditPaymentNotes('');
+  };
+
+  const doCreditSearch = async () => {
+    const term = creditSearchTerm.trim();
+    if (!term) return;
+    setCreditError('');
+    try {
+      const res = await api.get(`/customers/search?q=${encodeURIComponent(term)}`);
+      setCreditSearchResults(res);
+    } catch {
+      setCreditSearchResults([]);
+    }
+  };
+
+  const handleCreditSearch = async (e) => {
+    if (e.key !== 'Enter') return;
+    await doCreditSearch();
+  };
+
+  const selectCreditCustomer = async (customer) => {
+    setSelectedCreditCustomer(customer);
+    setCreditLoading(true);
+    setCreditError('');
+    try {
+      const [summary, history] = await Promise.all([
+        api.get(`/customers/${customer.id}/credit-summary`),
+        api.get(`/customers/${customer.id}/credit-history`),
+      ]);
+      setCreditBalance(summary.current_balance || 0);
+      setCreditHistory(history || []);
+    } catch {
+      setCreditError('Failed to load credit info');
+    } finally {
+      setCreditLoading(false);
+    }
+  };
+
+  const handleCreditPayment = async (e) => {
+    e.preventDefault();
+    if (!creditPaymentAmount || parseFloat(creditPaymentAmount) <= 0) return setCreditError('Enter a valid amount');
+    setCreditSubmitting(true);
+    setCreditError('');
+    try {
+      await api.post(`/customers/${selectedCreditCustomer.id}/payment`, { customer_id: selectedCreditCustomer.id, amount: parseFloat(creditPaymentAmount), notes: creditPaymentNotes || null });
+      setCreditSuccess('Payment recorded successfully');
+      setCreditPaymentAmount('');
+      setCreditPaymentNotes('');
+      const [summary, history] = await Promise.all([
+        api.get(`/customers/${selectedCreditCustomer.id}/credit-summary`),
+        api.get(`/customers/${selectedCreditCustomer.id}/credit-history`),
+      ]);
+      setCreditBalance(summary.current_balance || 0);
+      setCreditHistory(history || []);
+      setTimeout(() => setCreditSuccess(''), 3000);
+    } catch (err) {
+      setCreditError(err.message || 'Failed to record payment');
+    } finally {
+      setCreditSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -557,10 +688,13 @@ export default function Billing({ onNavigate }) {
            <button onClick={openRefundModal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
              Refund / Return
            </button>
+           <button onClick={openCreditModal} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+             Collect Credit Payment
+           </button>
            <button onClick={openBillLookup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
              Find Bill (F2)
            </button>
-        </div>
+         </div>
       </div>
 
       {savedCarts.length > 0 && (
@@ -697,6 +831,138 @@ export default function Billing({ onNavigate }) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {creditOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-lg">Collect Credit Payment</h3>
+              <button onClick={closeCreditModal} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto space-y-4">
+              {!selectedCreditCustomer ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Search Customer</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search by name or phone..."
+                        value={creditSearchTerm}
+                        onChange={e => setCreditSearchTerm(e.target.value)}
+                        onKeyDown={handleCreditSearch}
+                        className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        autoFocus
+                      />
+                      <button onClick={doCreditSearch} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">Search</button>
+                    </div>
+                  </div>
+                  {creditSearchResults.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                      {creditSearchResults.map(c => (
+                        <button key={c.id} onClick={() => selectCreditCustomer(c)} className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-blue-50 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-sm">{c.name}</p>
+                            <p className="text-xs text-gray-500">{c.phone}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {creditSearchResults.length === 0 && creditSearchTerm.length >= 2 && (
+                    <p className="text-center text-gray-500 text-sm py-4">No customers found</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="font-bold text-lg">{selectedCreditCustomer.name}</h4>
+                        <p className="text-sm text-gray-600">{selectedCreditCustomer.phone}</p>
+                      </div>
+                      <button onClick={() => { setSelectedCreditCustomer(null); setCreditBalance(null); setCreditHistory([]); setCreditError(''); }} className="text-xs px-3 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Change</button>
+                    </div>
+                    {creditLoading ? (
+                      <p className="text-gray-500 text-sm">Loading...</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <div className="bg-white rounded p-3 text-center">
+                          <p className="text-xs text-gray-500">Current Balance</p>
+                          <p className="text-lg font-bold text-red-600">Rs. {parseFloat(creditBalance || 0).toFixed(2)}</p>
+                        </div>
+                        <div className="bg-white rounded p-3 text-center">
+                          <p className="text-xs text-gray-500">Credit History</p>
+                          <p className="text-lg font-bold text-gray-800">{creditHistory.length} entries</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {creditHistory.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm text-gray-700 mb-2">Recent Transactions</h4>
+                      <div className="border rounded-lg overflow-hidden max-h-40 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-50 sticky top-0">
+                            <tr>
+                              <th className="text-left p-2 font-medium text-gray-600">Date</th>
+                              <th className="text-left p-2 font-medium text-gray-600">Type</th>
+                              <th className="text-right p-2 font-medium text-gray-600">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {creditHistory.slice(0, 10).map((tx, i) => (
+                              <tr key={i} className="border-t">
+                                <td className="p-2">{new Date(tx.created_at).toLocaleDateString('en-PK')}</td>
+                                <td className="p-2">
+                                  <span className={`px-1.5 py-0.5 rounded text-xs ${tx.type === 'PAYMENT' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {tx.type || 'CREDIT'}
+                                  </span>
+                                </td>
+                                <td className={`p-2 text-right font-medium ${tx.type === 'PAYMENT' ? 'text-green-600' : 'text-red-600'}`}>
+                                  {tx.type === 'PAYMENT' ? '+' : '-'}Rs. {parseFloat(tx.amount || 0).toFixed(2)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {creditBalance > 0 && (
+                    <form onSubmit={handleCreditPayment} className="space-y-3 border-t pt-4">
+                      <h4 className="font-semibold text-sm text-gray-700">Record Payment</h4>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Amount (Rs.) *</label>
+                        <input type="number" step="0.01" value={creditPaymentAmount} onChange={e => setCreditPaymentAmount(e.target.value)} placeholder="0.00" className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" required min="0.01" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                        <input type="text" value={creditPaymentNotes} onChange={e => setCreditPaymentNotes(e.target.value)} placeholder="Payment notes..." className="w-full px-3 py-2 border rounded-lg text-sm outline-none" />
+                      </div>
+                      {creditError && <p className="text-red-500 text-sm">{creditError}</p>}
+                      {creditSuccess && <p className="text-green-600 text-sm">{creditSuccess}</p>}
+                      <button type="submit" disabled={creditSubmitting || !creditPaymentAmount} className="w-full py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm disabled:opacity-50">
+                        {creditSubmitting ? 'Recording...' : 'Record Payment'}
+                      </button>
+                    </form>
+                  )}
+                  {creditBalance <= 0 && !creditLoading && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                      <p className="text-sm text-green-700">This customer has no outstanding balance</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t flex justify-end">
+              <button onClick={closeCreditModal} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm">Close</button>
+            </div>
           </div>
         </div>
       )}

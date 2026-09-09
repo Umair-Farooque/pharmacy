@@ -37,6 +37,10 @@ async function startServer() {
   const supplierRoutes = require('./routes/supplier');
   const settingRoutes = require('./routes/setting');
   const customerRoutes = require('./routes/customer');
+  const customerCreditRoutes = require('./routes/customerCredit');
+  const backupRoutes = require('./routes/backup');
+  const purchaseRoutes = require('./routes/purchase');
+  const supplierReturnRoutes = require('./routes/supplierReturn');
 
   app.use('/api/auth', authRoutes);
   app.use('/api/medicines', medicineRoutes);
@@ -48,6 +52,10 @@ async function startServer() {
   app.use('/api/suppliers', supplierRoutes);
   app.use('/api/settings', settingRoutes);
   app.use('/api/customers', customerRoutes);
+  app.use('/api/customers', customerCreditRoutes);
+  app.use('/api/backup', backupRoutes);
+  app.use('/api/purchase', purchaseRoutes);
+  app.use('/api/supplier-returns', supplierReturnRoutes);
 
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

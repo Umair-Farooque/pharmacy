@@ -29,6 +29,22 @@ async function createSale(req, res) {
     return res.status(400).json({ error: 'Sale must have at least one item' });
   }
 
+  if (!['PERCENTAGE', 'FIXED'].includes(discount_type)) {
+    return res.status(400).json({ error: 'discount_type must be PERCENTAGE or FIXED' });
+  }
+  if (discount_value < 0) {
+    return res.status(400).json({ error: 'discount_value must be >= 0' });
+  }
+  if (discount_type === 'PERCENTAGE' && discount_value > 100) {
+    return res.status(400).json({ error: 'Percentage discount cannot exceed 100' });
+  }
+  if (!['CASH', 'CARD', 'UPI', 'CREDIT'].includes(payment_method)) {
+    return res.status(400).json({ error: 'Invalid payment_method' });
+  }
+  if (tax_amount < 0) {
+    return res.status(400).json({ error: 'tax_amount must be >= 0' });
+  }
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -80,6 +96,7 @@ async function createSale(req, res) {
 
       const [batches] = await conn.query(
         `SELECT * FROM stock_batches WHERE medicine_id = ? AND quantity_in_stock > 0
+         AND (expiry_date IS NULL OR expiry_date > CURDATE())
          ORDER BY CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END ASC, expiry_date ASC, id ASC LIMIT 50`,
         [medicine_id]
       );
@@ -141,8 +158,16 @@ async function createSale(req, res) {
     let discountAmount = 0;
     if (discount_type === 'PERCENTAGE' && discount_value > 0) {
       discountAmount = subtotal * (discount_value / 100);
+      if (discountAmount > subtotal) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'Discount amount cannot exceed subtotal' });
+      }
     } else if (discount_type === 'FIXED' && discount_value > 0) {
       discountAmount = parseFloat(discount_value);
+      if (discountAmount > subtotal) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'Discount amount cannot exceed subtotal' });
+      }
     }
 
     const taxAmt = tax_amount || 0;
@@ -161,6 +186,23 @@ async function createSale(req, res) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [saleId, si.medicine_id, si.batch_id, si.quantity, si.purchase_rate_per_unit, si.selling_rate_per_unit, si.line_total, si.line_profit, si.service_charge]
       );
+    }
+
+    if (payment_method === 'CREDIT' && finalCustomerId) {
+      const [balanceRows] = await conn.query(
+        'SELECT COALESCE(SUM(amount), 0) as current_balance FROM customer_credit_transactions WHERE customer_id = ?',
+        [finalCustomerId]
+      );
+      const currentBalance = parseFloat(balanceRows[0].current_balance) || 0;
+      const newBalance = currentBalance + finalAmount;
+
+      await conn.query(
+        `INSERT INTO customer_credit_transactions (customer_id, sale_id, type, amount, balance_after, notes, processed_by)
+         VALUES (?, ?, 'CREDIT_SALE', ?, ?, NULL, ?)`,
+        [finalCustomerId, saleId, finalAmount, newBalance, cashier_id]
+      );
+
+      await conn.query('UPDATE customers SET credit_balance = ? WHERE id = ?', [newBalance, finalCustomerId]);
     }
 
     await conn.commit();
@@ -408,6 +450,24 @@ async function processReturn(req, res) {
           `Return: ${returnReference}`
         ]
       );
+    }
+
+    if (sales[0].payment_method === 'CREDIT' && sales[0].customer_id) {
+      const refundAmount = totalRefundAmount;
+      const [balanceRows] = await conn.query(
+        'SELECT COALESCE(SUM(amount), 0) as current_balance FROM customer_credit_transactions WHERE customer_id = ?',
+        [sales[0].customer_id]
+      );
+      const currentBalance = parseFloat(balanceRows[0].current_balance) || 0;
+      const newBalance = currentBalance - refundAmount;
+
+      await conn.query(
+        `INSERT INTO customer_credit_transactions (customer_id, sale_id, type, amount, balance_after, notes, processed_by)
+         VALUES (?, ?, 'REVERSAL', ?, ?, ?, ?)`,
+        [sales[0].customer_id, original_sale_id, -refundAmount, newBalance, req.body.reason || null, processed_by]
+      );
+
+      await conn.query('UPDATE customers SET credit_balance = ? WHERE id = ?', [newBalance, sales[0].customer_id]);
     }
 
     await conn.commit();

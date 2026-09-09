@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
 
+function getApiBase() {
+  const serverIp = localStorage.getItem('server_ip');
+  if (serverIp) {
+    return `http://${serverIp}:3000/api`;
+  }
+  return window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : '/api';
+}
+
 export default function ConnectionStatus() {
-  const [connected, setConnected] = useState(true);
+  const [status, setStatus] = useState('connecting');
 
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/health');
-        setConnected(response.ok);
+        const response = await fetch(`${getApiBase()}/health`);
+        setStatus(response.ok ? 'connected' : 'disconnected');
       } catch {
-        setConnected(false);
+        setStatus('disconnected');
       }
     };
 
@@ -18,11 +28,22 @@ export default function ConnectionStatus() {
     return () => clearInterval(interval);
   }, []);
 
-  if (connected) return null;
+  if (status === 'connected') return null;
+
+  const message =
+    status === 'connecting'
+      ? 'Connecting to server...'
+      : 'Disconnected from server. Please check your network connection.';
 
   return (
-    <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-center text-sm text-red-700">
-      Disconnected from server. Please check your network connection.
+    <div
+      className={`px-4 py-2 text-center text-sm border-b ${
+        status === 'connecting'
+          ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+          : 'bg-red-50 border-red-200 text-red-700'
+      }`}
+    >
+      {message}
     </div>
   );
 }

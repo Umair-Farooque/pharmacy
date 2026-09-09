@@ -6,6 +6,8 @@ import ConnectionStatus from './components/Common/ConnectionStatus';
 import AdminDashboard from './components/Admin/Dashboard';
 import Inventory from './components/Admin/Inventory';
 import Reports from './components/Admin/Reports';
+import PurchaseInvoices from './components/Admin/PurchaseInvoices';
+import SupplierReturns from './components/Admin/SupplierReturns';
 import Users from './components/Admin/Users';
 import Settings from './components/Admin/Settings';
 import Customers from './components/Admin/Customers';
@@ -48,6 +50,8 @@ function App() {
       case 'inventory': return <Inventory />;
       case 'customers': return <Customers />;
       case 'reports': return <Reports />;
+      case 'purchase-invoices': return <PurchaseInvoices />;
+      case 'supplier-returns': return <SupplierReturns />;
       case 'users': return <Users />;
       case 'settings': return <Settings />;
       case 'dashboard':

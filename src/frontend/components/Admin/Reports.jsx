@@ -26,10 +26,13 @@ export default function Reports() {
     api.get('/reports/batches').then(res => setBatches(res.batches || [])).catch(() => {});
   }, []);
   const [error, setError] = useState(null);
+  const [expiryActionLoading, setExpiryActionLoading] = useState(false);
+  const [expiryActionMsg, setExpiryActionMsg] = useState('');
 
   const loadReport = async () => {
     setLoading(true);
     setError(null);
+    setExpiryActionMsg('');
     try {
       const params = `?start_date=${filters.start_date}&end_date=${filters.end_date}`;
       let res;
@@ -72,6 +75,22 @@ export default function Reports() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const markBatchExpired = async (batchId, medicineName) => {
+    if (!confirm(`Mark all stock for "${medicineName}" batch #${batchId} as expired? This cannot be undone.`)) return;
+    setExpiryActionLoading(true);
+    setExpiryActionMsg('');
+    try {
+      await api.post('/stock/mark-expired', { batch_id: batchId, quantity: 999999 });
+      setExpiryActionMsg(`Batch marked as expired for ${medicineName}`);
+      setTimeout(() => { setExpiryActionMsg(''); }, 3000);
+      loadReport();
+    } catch (err) {
+      setExpiryActionMsg('Error: ' + err.message);
+    } finally {
+      setExpiryActionLoading(false);
     }
   };
 
@@ -206,7 +225,7 @@ export default function Reports() {
         </div>
       ) : (
         <ErrorBoundary>
-          <ReportContent tab={activeTab} data={data} settings={settings} medicines={medicines} users={users} batches={batches} extraFilters={extraFilters} setExtraFilters={setExtraFilters} filters={filters} />
+          <ReportContent tab={activeTab} data={data} settings={settings} medicines={medicines} users={users} batches={batches} extraFilters={extraFilters} setExtraFilters={setExtraFilters} filters={filters} markBatchExpired={markBatchExpired} expiryActionLoading={expiryActionLoading} expiryActionMsg={expiryActionMsg} />
         </ErrorBoundary>
       )}
     </div>
@@ -237,7 +256,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function ReportContent({ tab, data, settings, medicines, users, batches, extraFilters, setExtraFilters, filters }) {
+function ReportContent({ tab, data, settings, medicines, users, batches, extraFilters, setExtraFilters, filters, markBatchExpired, expiryActionLoading, expiryActionMsg }) {
   if (!data) return null;
 
   if (tab === 'sales') {
@@ -730,6 +749,11 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
     const items = data?.items || [];
     return (
       <div className="space-y-6">
+        {expiryActionMsg && (
+          <div className={`px-4 py-3 rounded-lg text-sm ${expiryActionMsg.startsWith('Error') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
+            {expiryActionMsg}
+          </div>
+        )}
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <div className="p-4 border-b flex justify-between items-center">
             <div>
@@ -757,6 +781,7 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                   <th className="text-center p-3 font-medium text-gray-600">Days Left</th>
                   <th className="text-right p-3 font-medium text-gray-600">Rate</th>
                   <th className="text-left p-3 font-medium text-gray-600">Supplier</th>
+                  <th className="text-right p-3 font-medium text-gray-600">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -779,6 +804,13 @@ function ReportContent({ tab, data, settings, medicines, users, batches, extraFi
                       </td>
                       <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
                       <td className="p-3 text-gray-600">{item.supplier_name || '-'}</td>
+                      <td className="p-3 text-right">
+                        {days <= 0 && (
+                          <button onClick={() => markBatchExpired && markBatchExpired(item.id, item.name)} disabled={expiryActionLoading} className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
+                            {expiryActionLoading ? 'Processing...' : 'Mark Expired'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

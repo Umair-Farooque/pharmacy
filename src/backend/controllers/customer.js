@@ -1,5 +1,5 @@
 const db = require('../db');
-const { logAudit } = require('../middleware');
+const { logAudit, captureBeforeAfter, logAuditWithBeforeAfter } = require('../middleware');
 
 function normalizePhone(phone) {
   if (!phone) return '';
@@ -111,7 +111,7 @@ async function updateCustomer(req, res) {
   try {
     await conn.beginTransaction();
 
-    const [existing] = await db.query(
+    const [existing] = await conn.query(
       'SELECT id FROM customers WHERE phone = ? AND id != ? AND is_active = 1',
       [normalizedPhone, req.params.id]
     );
@@ -119,6 +119,9 @@ async function updateCustomer(req, res) {
       await conn.rollback();
       return res.status(409).json({ error: 'Another customer with this phone number already exists' });
     }
+
+    const [beforeRows] = await conn.query('SELECT name, phone FROM customers WHERE id = ?', [req.params.id]);
+    const before = beforeRows.length > 0 ? { name: beforeRows[0].name, phone: beforeRows[0].phone } : null;
 
     const [result] = await conn.query(
       'UPDATE customers SET name = ?, phone = ? WHERE id = ?',
@@ -131,7 +134,7 @@ async function updateCustomer(req, res) {
     }
 
     await conn.commit();
-    await logAudit(req.user.id, 'CUSTOMER_UPDATED', 'customers', req.params.id, { name: name.trim(), phone: normalizedPhone });
+    await logAuditWithBeforeAfter(req.user.id, 'CUSTOMER_UPDATED', 'customers', req.params.id, before, { name: name.trim(), phone: normalizedPhone });
 
     res.json({ message: 'Customer updated successfully' });
   } catch (err) {
@@ -151,15 +154,17 @@ async function deactivateCustomer(req, res) {
   try {
     await conn.beginTransaction();
 
-    const [existing] = await db.query('SELECT id FROM customers WHERE id = ? AND is_active = 1', [req.params.id]);
+    const [existing] = await conn.query('SELECT id, is_active FROM customers WHERE id = ? AND is_active = 1', [req.params.id]);
     if (existing.length === 0) {
       await conn.rollback();
       return res.status(404).json({ error: 'Customer not found or already deactivated' });
     }
 
+    const before = { is_active: existing[0].is_active };
+
     await conn.query('UPDATE customers SET is_active = 0 WHERE id = ?', [req.params.id]);
     await conn.commit();
-    await logAudit(req.user.id, 'CUSTOMER_DEACTIVATED', 'customers', req.params.id, {});
+    await logAuditWithBeforeAfter(req.user.id, 'CUSTOMER_DEACTIVATED', 'customers', req.params.id, before, { is_active: 0 });
 
     res.json({ message: 'Customer deactivated successfully' });
   } catch (err) {
@@ -173,8 +178,8 @@ async function deactivateCustomer(req, res) {
 
 async function listCustomers(req, res) {
   try {
-    const { q, limit = 100, offset = 0 } = req.query;
-    let sql = 'SELECT id, name, phone, is_active, created_at FROM customers WHERE is_active = 1';
+    const { q, limit = 100, offset = 0, credit = '' } = req.query;
+    let sql = 'SELECT id, name, phone, is_active, created_at, COALESCE(credit_balance, 0) as credit_balance FROM customers WHERE is_active = 1';
     const params = [];
 
     if (q && q.trim()) {
@@ -182,6 +187,12 @@ async function listCustomers(req, res) {
       const likeTerm = `%${q.trim()}%`;
       sql += ' AND (phone = ? OR phone LIKE ? OR name LIKE ?)';
       params.push(normalizedPhone, normalizedPhone + '%', likeTerm);
+    }
+
+    if (credit === '1' || credit === 'true') {
+      sql += ' AND COALESCE(credit_balance, 0) > 0';
+    } else if (credit === '0' || credit === 'false') {
+      sql += ' AND COALESCE(credit_balance, 0) <= 0';
     }
 
     sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -206,10 +217,14 @@ async function getCustomerHistory(req, res) {
 
     const [sales] = await db.query(
       `SELECT s.id, s.bill_number, s.subtotal, s.discount_amount, s.tax_amount, s.final_amount,
-              s.payment_method, s.created_at, u.full_name as cashier_name
+              s.payment_method, s.created_at, u.full_name as cashier_name,
+              COALESCE(SUM(r.refund_amount), 0) as total_refund_amount,
+              COUNT(DISTINCT r.id) as return_count
        FROM sales s
        LEFT JOIN users u ON s.cashier_id = u.id
+       LEFT JOIN returns r ON r.original_sale_id = s.id
        WHERE s.customer_id = ?
+       GROUP BY s.id
        ORDER BY s.created_at DESC`,
       [customerId]
     );
@@ -242,10 +257,14 @@ async function getCustomerLastPurchase(req, res) {
 
     const [sales] = await db.query(
       `SELECT s.id, s.bill_number, s.subtotal, s.discount_amount, s.tax_amount, s.final_amount,
-              s.payment_method, s.created_at, u.full_name as cashier_name
+              s.payment_method, s.created_at, u.full_name as cashier_name,
+              COALESCE(SUM(r.refund_amount), 0) as total_refund_amount,
+              COUNT(DISTINCT r.id) as return_count
        FROM sales s
        LEFT JOIN users u ON s.cashier_id = u.id
+       LEFT JOIN returns r ON r.original_sale_id = s.id
        WHERE s.customer_id = ?
+       GROUP BY s.id
        ORDER BY s.created_at DESC LIMIT 1`,
       [customerId]
     );

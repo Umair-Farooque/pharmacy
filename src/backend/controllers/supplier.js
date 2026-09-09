@@ -42,4 +42,37 @@ async function deleteSupplier(req, res) {
   }
 }
 
-module.exports = { listSuppliers, createSupplier, updateSupplier, deleteSupplier };
+async function getSupplierProfile(req, res) {
+  try {
+    const [suppliers] = await db.query('SELECT * FROM suppliers WHERE id = ?', [req.params.id]);
+    if (suppliers.length === 0) return res.status(404).json({ error: 'Supplier not found' });
+
+    const [purchaseStats] = await db.query(
+      `SELECT COUNT(*) as total_purchase_invoices, COALESCE(SUM(total_amount), 0) as total_purchase_amount, MAX(purchase_date) as last_purchase_date
+       FROM purchase_invoices WHERE supplier_id = ?`,
+      [req.params.id]
+    );
+
+    res.json({ ...suppliers[0], ...purchaseStats[0] });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+async function getSupplierProducts(req, res) {
+  try {
+    const [rows] = await db.query(
+      `SELECT DISTINCT m.id, m.name, m.generic_name, m.category, m.manufacturer
+       FROM medicines m
+       JOIN stock_batches sb ON m.id = sb.medicine_id
+       WHERE sb.supplier_id = ?
+       ORDER BY m.name`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
+module.exports = { listSuppliers, createSupplier, updateSupplier, deleteSupplier, getSupplierProfile, getSupplierProducts };

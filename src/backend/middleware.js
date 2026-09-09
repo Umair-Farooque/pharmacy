@@ -43,4 +43,34 @@ async function logAudit(userId, action, tableAffected, recordId, details) {
   }
 }
 
-module.exports = { generateToken, requireAuth, requireAdmin, logAudit, JWT_SECRET };
+async function captureBeforeAfter(tableName, recordId, changes) {
+  try {
+    const [rows] = await db.query(`SELECT * FROM ${tableName} WHERE id = ?`, [recordId]);
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    const before = {};
+    if (Array.isArray(changes)) {
+      changes.forEach(field => { before[field] = row[field] !== undefined ? row[field] : null; });
+    } else if (typeof changes === 'function') {
+      return changes(row);
+    }
+    return before;
+  } catch (err) {
+    console.error('[AUDIT] captureBeforeAfter error:', err.message);
+    return null;
+  }
+}
+
+async function logAuditWithBeforeAfter(userId, action, tableAffected, recordId, before, after) {
+  try {
+    const sanitizedBefore = before && typeof before === 'object' ? { ...before } : before;
+    const sanitizedAfter = after && typeof after === 'object' ? { ...after } : after;
+    if (sanitizedBefore && sanitizedBefore.password_hash) sanitizedBefore.password_hash = '[REDACTED]';
+    if (sanitizedAfter && sanitizedAfter.password_hash) sanitizedAfter.password_hash = '[REDACTED]';
+    await logAudit(userId, action, tableAffected, recordId, { before: sanitizedBefore, after: sanitizedAfter });
+  } catch (err) {
+    console.error('[AUDIT] logAuditWithBeforeAfter error:', err.message);
+  }
+}
+
+module.exports = { generateToken, requireAuth, requireAdmin, logAudit, logAuditWithBeforeAfter, captureBeforeAfter, JWT_SECRET };

@@ -236,6 +236,26 @@ async function autoSetup() {
     `, 'audit_log table created');
 
     await run(`
+      CREATE TABLE IF NOT EXISTS customer_credit_transactions (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        customer_id INT NOT NULL,
+        sale_id INT,
+        type ENUM('CREDIT_SALE', 'PAYMENT', 'ADJUSTMENT', 'REVERSAL') NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        balance_after DECIMAL(10,2) NOT NULL,
+        notes VARCHAR(200),
+        processed_by INT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(id),
+        FOREIGN KEY (sale_id) REFERENCES sales(id),
+        FOREIGN KEY (processed_by) REFERENCES users(id)
+      )
+    `, 'customer_credit_transactions table created');
+
+    await run(`CREATE INDEX idx_customer_credit_customer ON customer_credit_transactions(customer_id)`, 'idx_customer_credit_customer');
+    await run(`CREATE INDEX idx_customer_credit_sale ON customer_credit_transactions(sale_id)`, 'idx_customer_credit_sale');
+
+    await run(`
       CREATE TABLE IF NOT EXISTS settings (
         \`key\` VARCHAR(50) PRIMARY KEY,
         value VARCHAR(200),
@@ -249,6 +269,78 @@ async function autoSetup() {
         counter INT DEFAULT 0
       )
     `, 'sale_counter table created');
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS purchase_invoices (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        invoice_number VARCHAR(50) UNIQUE NOT NULL,
+        supplier_id INT NOT NULL,
+        purchase_date DATE NOT NULL,
+        subtotal DECIMAL(10,2) NOT NULL,
+        discount_amount DECIMAL(10,2) DEFAULT 0,
+        tax_amount DECIMAL(10,2) DEFAULT 0,
+        total_amount DECIMAL(10,2) NOT NULL,
+        notes VARCHAR(200),
+        created_by INT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        FOREIGN KEY (created_by) REFERENCES users(id)
+      )
+    `, 'purchase_invoices table created');
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS purchase_invoice_items (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        purchase_invoice_id INT NOT NULL,
+        medicine_id INT NOT NULL,
+        batch_id INT NOT NULL,
+        quantity INT NOT NULL,
+        purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
+        selling_rate_per_unit DECIMAL(10,2) NOT NULL,
+        expiry_date DATE,
+        line_total DECIMAL(10,2) NOT NULL,
+        FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices(id),
+        FOREIGN KEY (medicine_id) REFERENCES medicines(id),
+        FOREIGN KEY (batch_id) REFERENCES stock_batches(id)
+      )
+    `, 'purchase_invoice_items table created');
+
+    await run(`CREATE INDEX idx_purchase_invoice_supplier ON purchase_invoices(supplier_id)`, 'idx_purchase_invoice_supplier');
+    await run(`CREATE INDEX idx_purchase_invoice_date ON purchase_invoices(purchase_date)`, 'idx_purchase_invoice_date');
+    await run(`CREATE INDEX idx_purchase_invoice_items_invoice ON purchase_invoice_items(purchase_invoice_id)`, 'idx_purchase_invoice_items_invoice');
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS supplier_returns (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        return_reference VARCHAR(50) UNIQUE NOT NULL,
+        supplier_id INT NOT NULL,
+        batch_id INT NOT NULL,
+        medicine_id INT NOT NULL,
+        quantity_returned INT NOT NULL,
+        purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
+        reason VARCHAR(200),
+        processed_by INT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+        FOREIGN KEY (batch_id) REFERENCES stock_batches(id),
+        FOREIGN KEY (medicine_id) REFERENCES medicines(id),
+        FOREIGN KEY (processed_by) REFERENCES users(id)
+      )
+    `, 'supplier_returns table created');
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS supplier_return_items (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        supplier_return_id INT NOT NULL,
+        batch_id INT NOT NULL,
+        medicine_id INT NOT NULL,
+        quantity_returned INT NOT NULL,
+        purchase_rate_per_unit DECIMAL(10,2) NOT NULL,
+        FOREIGN KEY (supplier_return_id) REFERENCES supplier_returns(id),
+        FOREIGN KEY (batch_id) REFERENCES stock_batches(id),
+        FOREIGN KEY (medicine_id) REFERENCES medicines(id)
+      )
+    `, 'supplier_return_items table created');
 
     console.log('[SETUP] Tables created');
 
@@ -273,6 +365,10 @@ async function autoSetup() {
     try {
       await run(`ALTER TABLE sale_items ADD COLUMN service_charge DECIMAL(10,2) DEFAULT 0`, 'Migration: add service_charge');
     } catch (e) { console.warn('[MIGRATION] service_charge may already exist'); }
+
+    try {
+      await run(`ALTER TABLE audit_log ADD COLUMN details TEXT`, 'Migration: add audit_log.details');
+    } catch (e) { console.warn('[MIGRATION] audit_log.details may already exist'); }
 
     try {
       await run(`ALTER TABLE customers MODIFY COLUMN name VARCHAR(100) NOT NULL`, 'Migration: customers.name NOT NULL');

@@ -101,6 +101,44 @@ async function adjustStock(req, res) {
   }
 }
 
+async function markExpired(req, res) {
+  const { batch_id, quantity } = req.body;
+  if (!batch_id || !quantity || quantity <= 0) {
+    return res.status(400).json({ error: 'batch_id and valid quantity are required' });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [batches] = await conn.query('SELECT * FROM stock_batches WHERE id = ?', [batch_id]);
+    if (batches.length === 0) { await conn.rollback(); return res.status(404).json({ error: 'Batch not found' }); }
+    const batch = batches[0];
+    if (batch.quantity_in_stock < quantity) {
+      await conn.rollback();
+      return res.status(400).json({ error: `Insufficient stock. Available: ${batch.quantity_in_stock}, Requested: ${quantity}` });
+    }
+
+    const newQuantity = batch.quantity_in_stock - quantity;
+    await conn.run('UPDATE stock_batches SET quantity_in_stock = ? WHERE id = ?', [newQuantity, batch_id]);
+
+    await conn.query(
+      `INSERT INTO stock_transactions (medicine_id, batch_id, transaction_type, quantity_change, quantity_before, quantity_after, performed_by, notes)
+       VALUES (?, ?, 'EXPIRED', ?, ?, ?, ?, ?)`,
+      [batch.medicine_id, batch_id, -quantity, batch.quantity_in_stock, newQuantity, req.user.id, 'Stock marked as expired']
+    );
+
+    await conn.commit();
+    await logAudit(req.user.id, 'STOCK_EXPIRED', 'stock_batches', batch_id, { batch_id, quantity });
+    res.json({ message: 'Stock marked as expired', batch_id, quantity, remaining_stock: newQuantity });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    conn.release();
+  }
+}
+
 async function getLowStock(req, res) {
   try {
     const [rows] = await db.query(`
@@ -138,4 +176,4 @@ async function getExpiringSoon(req, res) {
   }
 }
 
-module.exports = { restock, adjustStock, getLowStock, getExpiringSoon };
+module.exports = { restock, adjustStock, markExpired, getLowStock, getExpiringSoon };
