@@ -21,6 +21,7 @@ export default function Billing({ onNavigate }) {
   const [recentBills, setRecentBills] = useState([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [serviceCharge, setServiceCharge] = useState('');
+  const [awaitingServiceCharge, setAwaitingServiceCharge] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundBillNumber, setRefundBillNumber] = useState('');
   const [refundBill, setRefundBill] = useState(null);
@@ -151,7 +152,12 @@ export default function Billing({ onNavigate }) {
         ${Object.values(aggregatedItems).map(item => {
           const serviceChg = parseFloat(item.service_charge || 0);
           const itemTotal = item.line_total + serviceChg;
-          return `<div class="row"><span style="font-size:14px;font-weight:bold;">${item.medicine_name || 'Unknown'}</span><span style="font-size:14px;font-weight:bold;">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span style="font-size:14px;font-weight:bold;">${fmt(itemTotal)}</span></div>`;
+          const lines = [];
+          lines.push(`<div class="row"><span style="font-size:14px;font-weight:bold;">${item.medicine_name || 'Unknown'}</span><span style="font-size:14px;font-weight:bold;">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span style="font-size:14px;font-weight:bold;">${fmt(item.line_total)}</span></div>`);
+          if (serviceChg > 0) {
+            lines.push(`<div class="row"><span style="font-size:12px;font-weight:bold;color:#555;">  + Service Charge</span><span style="font-size:12px;font-weight:bold;color:#555;">${fmt(serviceChg)}</span></div>`);
+          }
+          return lines.join('');
         }).join('')}
         <div class="line"></div>
         <div class="row"><span style="font-size:14px;font-weight:bold;">Subtotal:</span><span style="font-size:14px;font-weight:bold;">${fmt(saleData.subtotal || 0)}</span></div>
@@ -224,13 +230,9 @@ export default function Billing({ onNavigate }) {
     setSearchResults([]);
     setSearchTerm('');
     setSelectedIndex(-1);
-    if (medicine.category === 'Drip Bottle') {
-      setServiceCharge('');
-      setTimeout(() => document.getElementById('serviceChargeInput')?.focus(), 50);
-    } else {
-      setServiceCharge('');
-      setTimeout(() => quantityRef.current?.focus(), 50);
-    }
+    setServiceCharge('');
+    setAwaitingServiceCharge(medicine.category === 'Drip Bottle');
+    setTimeout(() => quantityRef.current?.focus(), 50);
   };
 
   const handleSearchKeyDown = (e) => {
@@ -266,6 +268,13 @@ export default function Billing({ onNavigate }) {
         alert(`Only ${pendingMedicine.total_stock} units available`);
         return;
       }
+
+      if (awaitingServiceCharge) {
+        setAwaitingServiceCharge(false);
+        document.getElementById('serviceChargeInput')?.focus();
+        return;
+      }
+
       const medicine = pendingMedicine;
       const existing = cart.find(item => item.medicine_id === medicine.id);
       if (existing) {
@@ -288,6 +297,7 @@ export default function Billing({ onNavigate }) {
       setPendingMedicine(null);
       setQuantityInput('');
       setServiceCharge('');
+      setAwaitingServiceCharge(false);
       setSearchResults([]);
       setSearchTerm('');
       setTimeout(() => searchRef.current?.focus(), 50);
@@ -295,8 +305,24 @@ export default function Billing({ onNavigate }) {
       setPendingMedicine(null);
       setQuantityInput('');
       setServiceCharge('');
+      setAwaitingServiceCharge(false);
       setSearchTerm('');
       setSearchResults([]);
+      setTimeout(() => searchRef.current?.focus(), 50);
+    }
+  };
+
+  const handleServiceChargeKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      quantityRef.current?.focus();
+    } else if (e.key === 'Escape') {
+      setPendingMedicine(null);
+      setQuantityInput('');
+      setServiceCharge('');
+      setAwaitingServiceCharge(false);
+      setSearchResults([]);
+      setSearchTerm('');
       setTimeout(() => searchRef.current?.focus(), 50);
     }
   };
@@ -859,28 +885,10 @@ export default function Billing({ onNavigate }) {
             </div>
 
             {pendingMedicine && (
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-3">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-800">{pendingMedicine.name}</p>
-                  <p className="text-xs text-gray-500">Stock: {pendingMedicine.total_stock} | Rate: Rs.{pendingMedicine.selling_rate_per_unit || '?'}</p>
-                  {pendingMedicine.category === 'Drip Bottle' && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <label className="text-sm font-medium text-gray-600">Service Charges:</label>
-                      <input
-                        id="serviceChargeInput"
-                        type="number"
-                        min="0"
-                        value={serviceCharge}
-                        onChange={e => setServiceCharge(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') quantityRef.current?.focus(); }}
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="0"
-                      />
-                      <span className="text-xs text-gray-500">Rs.</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
+              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="font-medium text-gray-800">{pendingMedicine.name}</p>
+                <p className="text-xs text-gray-500">Stock: {pendingMedicine.total_stock} | Rate: Rs.{pendingMedicine.selling_rate_per_unit || '?'}</p>
+                <div className="flex items-center gap-2 mt-2">
                   <label className="text-sm font-medium text-gray-600">Qty:</label>
                   <input
                     ref={quantityRef}
@@ -890,15 +898,34 @@ export default function Billing({ onNavigate }) {
                     value={quantityInput}
                     onChange={e => setQuantityInput(e.target.value)}
                     onKeyDown={handleQuantityKeyDown}
-                    className="w-20 px-3 py-2 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-blue-500 outline-none"
+                    onWheel={e => e.target.blur()}
+                    className="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
                     autoFocus
                   />
                   <span className="text-xs text-gray-500">Enter</span>
-                  <button
-                    onClick={() => { setPendingMedicine(null); setQuantityInput(''); setServiceCharge(''); setSearchResults([]); setSearchTerm(''); searchRef.current?.focus(); }}
-                    className="text-gray-400 hover:text-gray-600 text-lg px-1"
-                  >×</button>
                 </div>
+                {awaitingServiceCharge && pendingMedicine.category === 'Drip Bottle' && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-sm font-medium text-gray-600">Service Charges:</label>
+                    <input
+                      id="serviceChargeInput"
+                      type="number"
+                      min="0"
+                      value={serviceCharge}
+                      onChange={e => setServiceCharge(e.target.value)}
+                      onKeyDown={handleServiceChargeKeyDown}
+                      onWheel={e => e.target.blur()}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
+                      placeholder="0"
+                      autoFocus
+                    />
+                    <span className="text-xs text-gray-500">Rs. (Enter to add)</span>
+                  </div>
+                )}
+                <button
+                  onClick={() => { setPendingMedicine(null); setQuantityInput(''); setServiceCharge(''); setAwaitingServiceCharge(false); setSearchResults([]); setSearchTerm(''); searchRef.current?.focus(); }}
+                  className="mt-2 text-gray-400 hover:text-gray-600 text-sm"
+                >Cancel</button>
               </div>
             )}
           </div>
@@ -933,7 +960,8 @@ export default function Billing({ onNavigate }) {
                           min="1"
                           value={item.quantity}
                           onChange={e => updateQuantity(item.medicine_id, parseInt(e.target.value) || 0)}
-                          className="w-16 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none"
+                          onWheel={e => e.target.blur()}
+                          className="w-16 px-2 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
                         />
                       </td>
                       <td className="p-3 text-right">Rs. {parseFloat(item.selling_rate_per_unit || 0).toFixed(2)}</td>
