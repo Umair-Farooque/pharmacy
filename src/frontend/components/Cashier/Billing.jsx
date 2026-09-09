@@ -29,10 +29,13 @@ export default function Billing({ onNavigate }) {
   const [refundLoading, setRefundLoading] = useState(false);
   const [refundError, setRefundError] = useState('');
   const [refundSuccess, setRefundSuccess] = useState(null);
+  const [savedCarts, setSavedCarts] = useState([]);
 
   const searchRef = useRef(null);
   const quantityRef = useRef(null);
   const billLookupRef = useRef(null);
+  const inlineCustomerNameRef = useRef(null);
+  const inlineCustomerPhoneRef = useRef(null);
 
   useEffect(() => {
     api.get('/settings').then(setSettings).catch(() => {});
@@ -330,6 +333,25 @@ export default function Billing({ onNavigate }) {
     setPaymentMethod('CASH');
   };
 
+  const handleNewBill = () => {
+    if (cart.length > 0) {
+      setSavedCarts([...savedCarts, {
+        cart, discountType, discountValue, paymentMethod, serviceCharge,
+        timestamp: Date.now(),
+      }]);
+    }
+    clearCart();
+  };
+
+  const handleSwitchCart = (index) => {
+    const savedCart = savedCarts[index];
+    setCart(savedCart.cart);
+    setDiscountType(savedCart.discountType);
+    setDiscountValue(savedCart.discountValue);
+    setPaymentMethod(savedCart.paymentMethod);
+    setServiceCharge(savedCart.serviceCharge);
+  };
+
   const handleSubmitSale = async () => {
     if (cart.length === 0) return alert('Cart is empty');
 
@@ -337,6 +359,9 @@ export default function Billing({ onNavigate }) {
     if (discountType === 'PERCENTAGE' && parseFloat(discountValue) > discountCap) {
       return alert(`Discount exceeds your ${discountCap}% cap. Admin approval required.`);
     }
+
+    const inlinePhone = inlineCustomerPhoneRef.current?.value?.trim() || '';
+    const inlineName = inlineCustomerNameRef.current?.value?.trim() || '';
 
     setProcessing(true);
     try {
@@ -346,9 +371,13 @@ export default function Billing({ onNavigate }) {
         discount_value: discountValue ? parseFloat(discountValue) : 0,
         tax_amount: 0,
         payment_method: paymentMethod,
+        customer_phone: inlinePhone || null,
+        customer_name: inlineName || null,
       });
       setBillPreview(res);
       clearCart();
+      if (inlineCustomerPhoneRef.current) inlineCustomerPhoneRef.current.value = '';
+      if (inlineCustomerNameRef.current) inlineCustomerNameRef.current.value = '';
     } catch (err) {
       alert(err.message);
     } finally {
@@ -364,6 +393,9 @@ export default function Billing({ onNavigate }) {
       return alert(`Discount exceeds your ${discountCap}% cap. Admin approval required.`);
     }
 
+    const inlinePhone = inlineCustomerPhoneRef.current?.value?.trim() || '';
+    const inlineName = inlineCustomerNameRef.current?.value?.trim() || '';
+
     setProcessing(true);
     try {
       const res = await api.post('/sales', {
@@ -372,9 +404,13 @@ export default function Billing({ onNavigate }) {
         discount_value: discountValue ? parseFloat(discountValue) : 0,
         tax_amount: 0,
         payment_method: paymentMethod,
+        customer_phone: inlinePhone || null,
+        customer_name: inlineName || null,
       });
       setBillPreview(res);
       clearCart();
+      if (inlineCustomerPhoneRef.current) inlineCustomerPhoneRef.current.value = '';
+      if (inlineCustomerNameRef.current) inlineCustomerNameRef.current.value = '';
       setTimeout(async () => {
         await printBillFromData(res);
         setBillPreview(null);
@@ -485,21 +521,51 @@ export default function Billing({ onNavigate }) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800">Billing</h2>
         <div className="flex gap-2">
-          <button
-            onClick={clearCart}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium"
-            title="Start a new bill"
-          >
-            New Bill
-          </button>
-          <button onClick={openRefundModal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
-            Refund / Return
-          </button>
-          <button onClick={openBillLookup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-            Find Bill (F2)
-          </button>
+           <button
+             onClick={handleNewBill}
+             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium"
+             title="Start a new bill (saves current cart)"
+           >
+             New Bill
+           </button>
+           <button onClick={openRefundModal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+             Refund / Return
+           </button>
+           <button onClick={openBillLookup} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
+             Find Bill (F2)
+           </button>
         </div>
       </div>
+
+      {savedCarts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {savedCarts.map((sc, i) => (
+            <div key={sc.timestamp} className="flex-shrink-0 bg-yellow-100 border border-yellow-300 rounded-lg p-2 relative">
+              <button
+                onClick={() => handleSwitchCart(i)}
+                className="text-left w-full"
+              >
+                <div className="font-medium text-sm">Cart {i + 1}</div>
+                <div className="text-xs text-gray-600">{sc.cart.length} items</div>
+                <div className="text-xs text-gray-500">{new Date(sc.timestamp).toLocaleTimeString()}</div>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSavedCarts(savedCarts.filter((_, j) => j !== i)); }}
+                className="absolute top-0 right-0 text-red-500 hover:text-red-700 text-xs leading-none"
+                title="Remove saved cart"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => setSavedCarts([])}
+            className="text-xs text-red-600 hover:text-red-800 underline"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
 
       {billLookupOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -532,6 +598,9 @@ export default function Billing({ onNavigate }) {
                   <p className="text-sm text-gray-600">Date: {formatDate(billLookupResult.created_at)}</p>
                   <p className="text-sm text-gray-600">Cashier: {billLookupResult.cashier_name}</p>
                   <p className="text-sm text-gray-600">Payment: {billLookupResult.payment_method}</p>
+                  {(billLookupResult.customer_name) && (
+                    <p className="text-sm text-blue-600">Customer: {billLookupResult.customer_name} ({billLookupResult.customer_phone || ''})</p>
+                  )}
                   {(billLookupResult.items || []).length > 0 && (
                     <table className="w-full mt-3 text-sm border-t pt-3">
                       <thead>
@@ -584,17 +653,18 @@ export default function Billing({ onNavigate }) {
                         }}
                         className="w-full text-left p-3 bg-gray-50 hover:bg-blue-50 rounded-lg border transition-colors"
                       >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-medium text-sm">#{bill.bill_number}</p>
-                            <p className="text-xs text-gray-500">{formatDate(bill.created_at)}</p>
-                            <p className="text-xs text-gray-500">{bill.cashier_name}</p>
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-medium text-sm">#{bill.bill_number}</p>
+                              <p className="text-xs text-gray-500">{formatDate(bill.created_at)}</p>
+                              <p className="text-xs text-gray-500">{bill.cashier_name}</p>
+                              {bill.customer_name && <p className="text-xs text-blue-600">{bill.customer_name} ({bill.customer_phone || ''})</p>}
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold">Rs. {parseFloat(bill.final_amount || 0).toFixed(2)}</p>
+                              <p className="text-xs text-gray-500">{bill.payment_method}</p>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-semibold">Rs. {parseFloat(bill.final_amount || 0).toFixed(2)}</p>
-                            <p className="text-xs text-gray-500">{bill.payment_method}</p>
-                          </div>
-                        </div>
                       </button>
                     ))}
                   </div>
@@ -763,8 +833,29 @@ export default function Billing({ onNavigate }) {
                       </div>
                     </button>
                   ))}
-                </div>
-              )}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <label className="block text-xs font-medium text-gray-600 mb-1">Customer (optional)</label>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Customer name"
+              ref={inlineCustomerNameRef}
+              className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <input
+              type="tel"
+              placeholder="Phone (e.g. 03001234567)"
+              ref={inlineCustomerPhoneRef}
+              className="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <p className="text-xs text-gray-400">Leave both empty for walk-in customer. Customer is auto-saved when phone is provided.</p>
+        </div>
+      </div>
             </div>
 
             {pendingMedicine && (
@@ -921,6 +1012,9 @@ export default function Billing({ onNavigate }) {
               <p className="text-sm text-green-700">Bill #: {billPreview.bill_number}</p>
               <p className="text-sm text-green-700">Amount: Rs. {billPreview.final_amount.toFixed(2)}</p>
               <p className="text-sm text-green-700">Profit: Rs. {parseFloat(billPreview.total_profit || 0).toFixed(2) || '0.00'}</p>
+              {billPreview.customer_name && (
+                <p className="text-sm text-green-700">Customer: {billPreview.customer_name} ({billPreview.customer_phone || ''})</p>
+              )}
               <button onClick={handlePrint} className="mt-3 w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm">
                 Print Bill
               </button>

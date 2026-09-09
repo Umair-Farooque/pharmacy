@@ -1,8 +1,28 @@
 const db = require('../db');
 const { logAudit } = require('../middleware');
 
+function normalizePhone(phone) {
+  if (!phone) return '';
+  let p = String(phone).trim();
+  p = p.replace(/[\s\-\(\)\.]/g, '');
+  if (p.startsWith('+92')) p = '0' + p.slice(3);
+  else if (p.startsWith('92') && p.length === 12) p = '0' + p.slice(2);
+  return p;
+}
+
+async function findOrCreateCustomer(conn, phone, name) {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return null;
+
+  const [existing] = await conn.query('SELECT id FROM customers WHERE phone = ? AND is_active = 1', [normalizedPhone]);
+  if (existing.length > 0) return existing[0].id;
+
+  const [result] = await conn.query('INSERT INTO customers (name, phone) VALUES (?, ?)', [name ? name.trim() : 'Customer-' + normalizedPhone, normalizedPhone]);
+  return result.insertId;
+}
+
 async function createSale(req, res) {
-  const { items, discount_type, discount_value, tax_amount, payment_method, customer_id } = req.body;
+  const { items, discount_type, discount_value, tax_amount, payment_method, customer_id, customer_phone, customer_name } = req.body;
   const cashier_id = req.user.id;
 
   if (!items || items.length === 0) {
@@ -15,6 +35,26 @@ async function createSale(req, res) {
 
     const [cashierRow] = await conn.query('SELECT full_name FROM users WHERE id = ?', [cashier_id]);
     const cashier_name = cashierRow[0]?.full_name || '';
+
+    let finalCustomerId = customer_id || null;
+    let customerName = null;
+
+    if (!finalCustomerId && customer_phone) {
+      finalCustomerId = await findOrCreateCustomer(conn, customer_phone, customer_name);
+    }
+
+    if (finalCustomerId) {
+      const [custRows] = await conn.query('SELECT name, is_active FROM customers WHERE id = ?', [finalCustomerId]);
+      if (custRows.length === 0) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'Customer not found' });
+      }
+      if (!custRows[0].is_active) {
+        await conn.rollback();
+        return res.status(400).json({ error: 'Customer is inactive' });
+      }
+      customerName = custRows[0].name;
+    }
 
     const bill_number = await db.getNextSaleBill();
     let subtotal = 0;
@@ -111,7 +151,7 @@ async function createSale(req, res) {
     const saleResult = await conn.run(
       `INSERT INTO sales (bill_number, subtotal, discount_type, discount_value, discount_amount, tax_amount, final_amount, payment_method, customer_id, cashier_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [bill_number, subtotal, discount_type || null, discount_value || 0, discountAmount, taxAmt, finalAmount, payment_method || 'CASH', customer_id || null, cashier_id]
+      [bill_number, subtotal, discount_type || null, discount_value || 0, discountAmount, taxAmt, finalAmount, payment_method || 'CASH', finalCustomerId, cashier_id]
     );
     const saleId = saleResult.insertId;
 
@@ -124,7 +164,7 @@ async function createSale(req, res) {
     }
 
     await conn.commit();
-    await logAudit(cashier_id, 'SALE_CREATED', 'sales', saleId, { bill_number, final_amount: finalAmount });
+    await logAudit(cashier_id, 'SALE_CREATED', 'sales', saleId, { bill_number, final_amount: finalAmount, customer_id: customer_id || null, customer_name: customerName });
 
     res.status(201).json({
       id: saleId,
@@ -137,6 +177,8 @@ async function createSale(req, res) {
       final_amount: finalAmount,
       total_profit: totalProfit,
       payment_method: payment_method || 'CASH',
+      customer_id: finalCustomerId,
+      customer_name: customerName,
       cashier_id,
       cashier_name,
       created_at: new Date().toISOString(),
@@ -155,8 +197,11 @@ async function createSale(req, res) {
 async function getSale(req, res) {
   try {
     const [sales] = await db.query(
-      `SELECT s.*, u.full_name as cashier_name FROM sales s
-       JOIN users u ON s.cashier_id = u.id WHERE s.id = ?`,
+      `SELECT s.*, u.full_name as cashier_name, c.name as customer_name, c.phone as customer_phone
+       FROM sales s
+       JOIN users u ON s.cashier_id = u.id
+       LEFT JOIN customers c ON s.customer_id = c.id
+       WHERE s.id = ?`,
       [req.params.id]
     );
     if (sales.length === 0) return res.status(404).json({ error: 'Sale not found' });
@@ -176,8 +221,11 @@ async function getSale(req, res) {
 async function getSaleByBillNumber(req, res) {
   try {
     const [sales] = await db.query(
-      `SELECT s.*, u.full_name as cashier_name FROM sales s
-       JOIN users u ON s.cashier_id = u.id WHERE s.bill_number = ?`,
+      `SELECT s.*, u.full_name as cashier_name, c.name as customer_name, c.phone as customer_phone
+       FROM sales s
+       JOIN users u ON s.cashier_id = u.id
+       LEFT JOIN customers c ON s.customer_id = c.id
+       WHERE s.bill_number = ?`,
       [req.params.bill_number]
     );
     if (sales.length === 0) return res.status(404).json({ error: 'Sale not found' });
@@ -196,16 +244,19 @@ async function getSaleByBillNumber(req, res) {
 
 async function listSales(req, res) {
   try {
-    const { start_date, end_date, cashier_id, limit = 100, offset = 0 } = req.query;
+    const { start_date, end_date, cashier_id, customer_id, limit = 100, offset = 0 } = req.query;
     let sql = `
-      SELECT s.*, u.full_name as cashier_name FROM sales s
-      JOIN users u ON s.cashier_id = u.id WHERE 1=1
+      SELECT s.*, u.full_name as cashier_name, c.name as customer_name, c.phone as customer_phone
+      FROM sales s
+      JOIN users u ON s.cashier_id = u.id
+      LEFT JOIN customers c ON s.customer_id = c.id WHERE 1=1
     `;
     const params = [];
 
     if (start_date) { sql += ' AND DATE(s.created_at) >= ?'; params.push(start_date); }
     if (end_date) { sql += ' AND DATE(s.created_at) <= ?'; params.push(end_date); }
     if (cashier_id) { sql += ' AND s.cashier_id = ?'; params.push(cashier_id); }
+    if (customer_id) { sql += ' AND s.customer_id = ?'; params.push(customer_id); }
 
     sql += ' ORDER BY s.created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit), parseInt(offset));

@@ -274,6 +274,42 @@ async function autoSetup() {
       await run(`ALTER TABLE sale_items ADD COLUMN service_charge DECIMAL(10,2) DEFAULT 0`, 'Migration: add service_charge');
     } catch (e) { console.warn('[MIGRATION] service_charge may already exist'); }
 
+    try {
+      await run(`ALTER TABLE customers MODIFY COLUMN name VARCHAR(100) NOT NULL`, 'Migration: customers.name NOT NULL');
+    } catch (e) { console.warn('[MIGRATION] customers.name NOT NULL may already exist'); }
+
+    try {
+      await run(`ALTER TABLE customers MODIFY COLUMN phone VARCHAR(20) NOT NULL`, 'Migration: customers.phone NOT NULL');
+    } catch (e) { console.warn('[MIGRATION] customers.phone NOT NULL may already exist'); }
+
+    try {
+      await run(`ALTER TABLE customers ADD COLUMN is_active TINYINT DEFAULT 1`, 'Migration: add customers.is_active');
+    } catch (e) { console.warn('[MIGRATION] customers.is_active may already exist'); }
+
+    try {
+      await run(`ALTER TABLE customers ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`, 'Migration: add customers.created_at');
+    } catch (e) { console.warn('[MIGRATION] customers.created_at may already exist'); }
+
+    try {
+      await run(`ALTER TABLE customers ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`, 'Migration: add customers.updated_at');
+    } catch (e) { console.warn('[MIGRATION] customers.updated_at may already exist'); }
+
+    try {
+      await run(`CREATE UNIQUE INDEX idx_customer_phone ON customers(phone)`, 'Migration: unique index on customers.phone');
+    } catch (e) { console.warn('[MIGRATION] idx_customer_phone may already exist'); }
+
+    try {
+      await run(`ALTER TABLE sales DROP FOREIGN KEY sales_ibfk_1`, 'Migration: drop old customer FK');
+    } catch (e) { console.warn('[MIGRATION] old customer FK drop:', e.message); }
+
+    try {
+      await run(`ALTER TABLE sales ADD CONSTRAINT sales_customer_fk FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL`, 'Migration: add customer FK ON DELETE SET NULL');
+    } catch (e) { console.warn('[MIGRATION] customer FK:', e.message); }
+
+    try {
+      await run(`CREATE INDEX idx_sales_customer ON sales(customer_id)`, 'Migration: sales.customer_id index');
+    } catch (e) { console.warn('[MIGRATION] idx_sales_customer may already exist'); }
+
     const [settingsCount] = await connection.query("SELECT COUNT(*) as count FROM settings");
     if (settingsCount[0].count === 0) {
       await connection.query(`

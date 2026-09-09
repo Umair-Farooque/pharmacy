@@ -36,6 +36,7 @@ async function startServer() {
   const rackRoutes = require('./routes/rack');
   const supplierRoutes = require('./routes/supplier');
   const settingRoutes = require('./routes/setting');
+  const customerRoutes = require('./routes/customer');
 
   app.use('/api/auth', authRoutes);
   app.use('/api/medicines', medicineRoutes);
@@ -46,6 +47,7 @@ async function startServer() {
   app.use('/api/racks', rackRoutes);
   app.use('/api/suppliers', supplierRoutes);
   app.use('/api/settings', settingRoutes);
+  app.use('/api/customers', customerRoutes);
 
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

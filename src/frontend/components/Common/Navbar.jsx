@@ -7,6 +7,7 @@ export default function Navbar({ currentPage, onNavigate, onLogout }) {
   const adminLinks = [
     { key: 'dashboard', label: 'Dashboard' },
     { key: 'inventory', label: 'Inventory' },
+    { key: 'customers', label: 'Customers' },
     { key: 'reports', label: 'Reports' },
     { key: 'users', label: 'Users' },
     { key: 'settings', label: 'Settings' },
@@ -15,6 +16,7 @@ export default function Navbar({ currentPage, onNavigate, onLogout }) {
   const cashierLinks = [
     { key: 'billing', label: 'Billing' },
     { key: 'search', label: 'Search' },
+    { key: 'customers', label: 'Customers' },
   ];
 
   const links = isAdmin ? adminLinks : cashierLinks;

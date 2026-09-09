@@ -8,6 +8,7 @@ import Inventory from './components/Admin/Inventory';
 import Reports from './components/Admin/Reports';
 import Users from './components/Admin/Users';
 import Settings from './components/Admin/Settings';
+import Customers from './components/Admin/Customers';
 import Billing from './components/Cashier/Billing';
 import SearchMedicine from './components/Cashier/SearchMedicine';
 import SetupWizard from './components/Common/SetupWizard';
@@ -37,6 +38,7 @@ function App() {
     if (user.role === 'CASHIER') {
       switch (currentPage) {
         case 'search': return <SearchMedicine />;
+        case 'customers': return <Customers />;
         case 'billing':
         default: return <Billing onNavigate={setCurrentPage} />;
       }
@@ -44,6 +46,7 @@ function App() {
 
     switch (currentPage) {
       case 'inventory': return <Inventory />;
+      case 'customers': return <Customers />;
       case 'reports': return <Reports />;
       case 'users': return <Users />;
       case 'settings': return <Settings />;
