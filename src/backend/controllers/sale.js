@@ -29,10 +29,10 @@ async function createSale(req, res) {
     return res.status(400).json({ error: 'Sale must have at least one item' });
   }
 
-  if (!['PERCENTAGE', 'FIXED'].includes(discount_type)) {
+  if (discount_type && !['PERCENTAGE', 'FIXED'].includes(discount_type)) {
     return res.status(400).json({ error: 'discount_type must be PERCENTAGE or FIXED' });
   }
-  if (discount_value < 0) {
+  if (discount_value !== undefined && discount_value !== null && discount_value < 0) {
     return res.status(400).json({ error: 'discount_value must be >= 0' });
   }
   if (discount_type === 'PERCENTAGE' && discount_value > 100) {

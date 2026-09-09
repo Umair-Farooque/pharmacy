@@ -42,7 +42,7 @@
   },
   "build": {
     "appId": "com.pharmacy.management",
-    "productName": "Pharmacy Management",
+    "productName": "Al-Hafiz Pharmacy",
     "directories": {
       "output": "dist"
     },
