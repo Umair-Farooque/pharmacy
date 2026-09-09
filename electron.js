@@ -182,11 +182,14 @@ ipcMain.on('restart-app', () => {
 });
 
 ipcMain.handle('print-bill', async (event, { html, printerName, paperWidth }) => {
+  let win;
+  let tempFile = null;
   try {
-    const win = new BrowserWindow({
+    win = new BrowserWindow({
       show: false,
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
+
     const content = `<!DOCTYPE html><html><head><meta charset="utf-8">
       <style>
         body { font-family: 'Courier New', monospace; margin: 0; padding: 8px; }
@@ -194,18 +197,37 @@ ipcMain.handle('print-bill', async (event, { html, printerName, paperWidth }) =>
         .line { border-top: 1px dashed #000; margin: 6px 0; }
         .row { display: flex; justify-content: space-between; }
       </style></head><body>${html}</body></html>`;
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(content));
+
+    const { join } = require('path');
+    const os = require('os');
+    tempFile = join(os.tmpdir(), `bill-${Date.now()}.html`);
+    require('fs').writeFileSync(tempFile, content, 'utf8');
+
+    await win.loadFile(tempFile);
+
+    await new Promise(resolve => {
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', resolve);
+      } else {
+        resolve();
+      }
+    });
+
+    const pageSize = paperWidth === '58mm' ? { width: 164.84, height: 1190.55 } : { width: 226.77, height: 1190.55 };
     const printOptions = {
-      silent: true,
+      silent: !!printerName,
       deviceName: printerName || undefined,
       copies: 1,
-      pageSize: paperWidth === '58mm' ? '58mm' : '80mm',
-      margin: '0mm',
+      printBackground: true,
+      pageSize,
+      margins: { marginType: 'none' },
     };
-    const data = await win.webContents.print(printOptions);
+    await win.webContents.print(printOptions);
     win.close();
-    return { success: true, data };
+    return { success: true };
   } catch (err) {
+    console.error('[PRINT] Error:', err.message);
+    if (win) { try { win.close(); } catch (e) {} }
     return { success: false, error: err.message };
   }
 });

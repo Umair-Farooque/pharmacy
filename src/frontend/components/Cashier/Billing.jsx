@@ -166,19 +166,40 @@ export default function Billing({ onNavigate }) {
 
     if (window.electronAPI && window.electronAPI.printBill) {
       try {
-        await window.electronAPI.printBill(
+        const result = await window.electronAPI.printBill(
           printContent,
           settings.printer_name || null,
           settings.paper_size || '80mm'
         );
+        if (!result?.success) {
+          alert('Print failed: ' + (result?.error || 'Unknown error'));
+        }
       } catch (err) {
         alert('Print failed: ' + err.message);
       }
     } else {
-      const win = window.open('', '_blank', 'width=400,height=600');
-      win.document.write(printContent);
-      win.document.close();
-      win.print();
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      iframe.style.opacity = '0';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(printContent);
+      doc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch (e) {
+          alert('Print failed: ' + e.message);
+        }
+        document.body.removeChild(iframe);
+      }, 200);
     }
   };
 
@@ -294,7 +315,6 @@ export default function Billing({ onNavigate }) {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.quantity * parseFloat(item.selling_rate_per_unit || 0)) + (parseFloat(item.service_charge || 0)), 0);
-  const totalServiceCharges = cart.reduce((sum, item) => sum + (item.service_charge || 0), 0);
   let discountAmount = 0;
   if (discountType === 'PERCENTAGE' && discountValue > 0) {
     discountAmount = subtotal * (discountValue / 100);
@@ -302,6 +322,13 @@ export default function Billing({ onNavigate }) {
     discountAmount = parseFloat(discountValue);
   }
   const finalAmount = Math.max(0, subtotal - discountAmount);
+
+  const clearCart = () => {
+    setCart([]);
+    setDiscountType('');
+    setDiscountValue('');
+    setPaymentMethod('CASH');
+  };
 
   const handleSubmitSale = async () => {
     if (cart.length === 0) return alert('Cart is empty');
@@ -321,9 +348,7 @@ export default function Billing({ onNavigate }) {
         payment_method: paymentMethod,
       });
       setBillPreview(res);
-      setCart([]);
-      setDiscountType('');
-      setDiscountValue('');
+      clearCart();
     } catch (err) {
       alert(err.message);
     } finally {
@@ -349,10 +374,12 @@ export default function Billing({ onNavigate }) {
         payment_method: paymentMethod,
       });
       setBillPreview(res);
-      setCart([]);
-      setDiscountType('');
-      setDiscountValue('');
-      setTimeout(() => printBillFromData(res), 100);
+      clearCart();
+      setTimeout(async () => {
+        await printBillFromData(res);
+        setBillPreview(null);
+        searchRef.current?.focus();
+      }, 100);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -360,9 +387,11 @@ export default function Billing({ onNavigate }) {
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!billPreview) return;
-    printBillFromData(billPreview);
+    await printBillFromData(billPreview);
+    setBillPreview(null);
+    searchRef.current?.focus();
   };
 
   const openRefundModal = () => {
@@ -456,6 +485,13 @@ export default function Billing({ onNavigate }) {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800">Billing</h2>
         <div className="flex gap-2">
+          <button
+            onClick={clearCart}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium"
+            title="Start a new bill"
+          >
+            New Bill
+          </button>
           <button onClick={openRefundModal} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
             Refund / Return
           </button>
