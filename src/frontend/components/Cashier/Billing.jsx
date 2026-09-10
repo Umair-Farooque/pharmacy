@@ -146,32 +146,14 @@ export default function Billing({ onNavigate }) {
       aggregatedItems[key].line_total += item.line_total;
       aggregatedItems[key].service_charge += item.service_charge || 0;
     }
-    // Physical print page dimensions derived from the configured paper width.
-    // Default to 58mm for a DTP-220 thermal receipt printer unless 80mm is
-    // explicitly selected. body width == paper width; the inner .receipt holds
-    // the printable area (~54mm on 58mm paper) so text is readable and fills the
-    // paper without browser/driver scaling. This is the single, self-contained
-    // print document used by both the Electron path (loaded as-is) and the
-    // browser fallback.
-    const paper = settings.paper_size === '80mm' ? '80mm' : '58mm';
+    // Billing.jsx only supplies the receipt BODY content. It no longer builds a
+    // full HTML document or any print-page CSS - electron.js is the SINGLE OWNER
+    // of the complete thermal print document (@page size, body width, fonts,
+    // margins) and wraps this content in <div id="receipt">. The .row 3-column
+    // grid structure is kept so Electron's print CSS lays out each line (the
+    // medicine name wraps, while the quantity/rate and total stay right-aligned
+    // and visible).
     const printContent = `
-      <html><head><meta charset="utf-8"><title>Bill ${saleData.bill_number}</title>
-      <style>
-        @page { size: ${paper} auto; margin: 0; }
-        html, body { width: ${paper}; margin: 0; padding: 0; }
-        body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-        #receipt { width: ${paper}; box-sizing: border-box; margin: 0; padding: 1.5mm 2mm; }
-        .center { text-align: center; }
-        .left { text-align: left; }
-        .line { border-top: 1px solid #000; margin: 6px 0; }
-        .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 2mm; width: 100%; box-sizing: border-box; }
-        .item-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
-        .item-qty, .item-price { text-align: right; white-space: nowrap; }
-        .shop-name { font-size: 18px; font-weight: bold; margin: 0; }
-        .info { font-size: 12px; font-weight: 600; margin: 2px 0; }
-        .total { font-size: 14px; font-weight: bold; }
-      </style></head><body>
-        <div id="receipt">
           <div class="center">
             <h3 class="shop-name">${settings.shop_name || 'Medical Store'}</h3>
             <p class="info">${settings.shop_address || ''}</p>
@@ -204,8 +186,6 @@ export default function Billing({ onNavigate }) {
           <div class="line"></div>
           <div class="center"><p class="info">BunnySystems &nbsp;&nbsp; 030862629</p></div>
           <div class="line"></div>
-        </div>
-      </body></html>
     `;
 
     if (window.electronAPI && window.electronAPI.printBill) {
@@ -236,9 +216,28 @@ export default function Billing({ onNavigate }) {
       iframe.style.opacity = '0';
       document.body.appendChild(iframe);
 
+      // Browser fallback: there is no electron.js to own the print document, so
+      // the same body-only content is wrapped in a minimal self-contained page
+      // here. This wrapper is local to the browser path and is never sent to
+      // Electron (which wraps everything itself in the canonical 58mm page).
+      const fullDocument = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        @page { size: 58mm auto; margin: 0; }
+        html, body { width: 58mm; margin: 0; padding: 0; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
+        #receipt { width: 58mm; box-sizing: border-box; margin: 0; padding: 1.5mm 2mm; }
+        .center { text-align: center; }
+        .left { text-align: left; }
+        .line { border-top: 1px solid #000; margin: 6px 0; }
+        .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 2mm; width: 100%; box-sizing: border-box; }
+        .item-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+        .item-qty, .item-price { text-align: right; white-space: nowrap; }
+        .shop-name { font-size: 18px; font-weight: bold; margin: 0; }
+        .info { font-size: 12px; font-weight: 600; margin: 2px 0; }
+        .total { font-size: 14px; font-weight: bold; }
+      </style></head><body><div id="receipt">${printContent}</div></body></html>`;
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       doc.open();
-      doc.write(printContent);
+      doc.write(fullDocument);
       doc.close();
 
       setTimeout(() => {

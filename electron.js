@@ -931,9 +931,10 @@ async function printHtml({ html, printerName, paperWidth }) {
 
   try {
     // Render at the real receipt width in a HIDDEN window (no pop-up, no dialog).
-    const renderWidth = paperWidth === '58mm' ? 219 : 302; // CSS px (~58/80mm @ 96dpi)
-    // Small initial height: the viewport must NEVER become the thermal paper
-    // height. The receipt's own laid-out bounding box determines page height.
+    // The DTP-220 thermal printer is confirmed as 58mm wide, which is ~219 CSS px
+    // at 96dpi. The initial height stays small so the viewport can NEVER become
+    // the thermal paper height - the receipt's own laid-out bounding box does.
+    const renderWidth = 219;
     win = new BrowserWindow({
       show: false,
       width: renderWidth,
@@ -942,33 +943,87 @@ async function printHtml({ html, printerName, paperWidth }) {
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
 
-    // Deliver a single, controlled print document. Full documents from Billing.jsx
-    // already own their physical page (@page + body width + fonts, so the driver
-    // renders at native size) and are loaded as-is. Short fragments (e.g. the
-    // Settings test-print) are wrapped here with the canonical 58mm/80mm portrait
-    // page so the driver gets native-size, zero-margin, full-width output instead
-    // of a scaled, side-margined layout. We never nest one full document inside
-    // another - the old wrapper added an extra body padding box on top of
-    // Billing.jsx's body padding, which produced doubled margins and tiny print.
-    let content = html || '';
-    const isFullDocument = /<html[\s>]/i.test(html || '');
-    if (!isFullDocument) {
-      const paper = paperWidth === '58mm' ? 58 : 80; // mm
-      const pageWidth = `${paper}mm`;
-      content = `<!DOCTYPE html><html><head><meta charset="utf-8">
-        <style>
-          @page { size: ${pageWidth} auto; margin: 0; }
-          html, body { width: ${pageWidth}; margin: 0; padding: 0; }
-          body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-          #receipt { width: ${pageWidth}; box-sizing: border-box; margin: 0; padding: 1.5mm 2mm; }
-          .center { text-align: center; }
-          .left { text-align: left; }
-          .line { border-top: 1px solid #000; margin: 6px 0; }
-          .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 2mm; width: 100%; box-sizing: border-box; }
-          .item-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
-          .item-qty, .item-price { text-align: right; white-space: nowrap; }
-        </style></head><body><div id="receipt">${html}</div></body></html>`;
-    }
+    // electron.js is the SINGLE OWNER of the thermal print document. Whatever
+    // Billing.jsx or the Settings test-print supplies is treated as bare receipt
+    // BODY content and is ALWAYS wrapped here with the canonical 58mm portrait
+    // page (native-size, zero-margin, full-width). We never accept a complete
+    // <html> document from the frontend - doing so previously bypassed this
+    // wrapper and left the 58mm geometry unapplied.
+    const content = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+
+<style>
+@page {
+    size: 58mm auto;
+    margin: 0;
+}
+
+html,
+body {
+    width: 58mm;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    font-size: 15px;
+    line-height: 1.25;
+    font-weight: bold;
+    color: #000;
+}
+
+#receipt {
+    width: 58mm;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 1.5mm 2mm;
+}
+
+.center {
+    text-align: center;
+}
+
+.left {
+    text-align: left;
+}
+
+.line {
+    border-top: 1px solid #000;
+    margin: 6px 0;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 2mm;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.row > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.row > span:nth-child(2),
+.row > span:nth-child(3) {
+    white-space: nowrap;
+    text-align: right;
+}
+</style>
+
+</head>
+
+<body>
+<div id="receipt">
+    ${html}
+</div>
+</body>
+</html>`;
 
     // Unique temp name so rapid, repeated prints can never collide.
     tempFile = path.join(os.tmpdir(), `bill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`);
@@ -981,8 +1036,11 @@ async function printHtml({ html, printerName, paperWidth }) {
     // the physical page height from the real receipt content.
     const metrics = await measureReceipt(win.webContents);
     const pxToMicrons = (px) => Math.max(352, Math.round(px * 25400 / 96));
-    const pageWidthMicrons = paperWidth === '58mm' ? 58000 : 80000;
-    // Only a tiny (~2mm) safety pad; +8 CSS px @ 96dpi converts to ~2.1mm.
+    // The DTP-220 printer is a 58mm thermal printer, so the paper width is fixed
+    // at 58mm (58000 microns). We never fall back to 80mm for this printer.
+    const pageWidthMicrons = 58000;
+    // Only a tiny (~2mm) safety pad; +8 CSS px @ 96dpi converts to ~2.1mm. We do
+    // NOT add hundreds of pixels and we never use the window height here.
     const pageHeightMicrons = pxToMicrons(metrics.height + 8);
 
     // Resolve the target printer. A configured printer (per-PC choice stored in
@@ -1019,11 +1077,14 @@ async function printHtml({ html, printerName, paperWidth }) {
       }
     };
 
-    // Temporary diagnostic logging so the actual print values are visible.
-    console.log('[PRINT] Receipt dimensions:', metrics);
-    console.log('[PRINT] Page width microns:', pageWidthMicrons);
-    console.log('[PRINT] Page height microns:', pageHeightMicrons);
-    console.log('[PRINT] Print options:', JSON.stringify(printOptions, null, 2));
+    // STEP 10: temporary diagnostic logging so the actual executed print values
+    // are visible for the DTP-220 (paperWidth=58mm, pageWidthMicrons=58000).
+    console.log('[PRINT] paperWidth:', paperWidth);
+    console.log('[PRINT] printerName:', printerName);
+    console.log('[PRINT] receipt metrics:', metrics);
+    console.log('[PRINT] pageWidthMicrons:', pageWidthMicrons);
+    console.log('[PRINT] pageHeightMicrons:', pageHeightMicrons);
+    console.log('[PRINT] printOptions:', JSON.stringify(printOptions, null, 2));
     console.log(`[PRINT] Sending to printer: ${device || '(default)'} (silent)`);
 
     // Callback-based webContents.print() - Electron 26 has no Promise form.
