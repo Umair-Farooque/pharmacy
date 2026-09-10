@@ -196,11 +196,14 @@ export default function Billing({ onNavigate }) {
           printerName,
           settings.paper_size || '80mm'
         );
-        if (!result?.success) {
-          alert('Print failed: ' + (result?.error || 'Unknown error'));
+        if (result?.success) {
+          return true;
         }
+        alert('Print failed: ' + (result?.error || 'Unknown error'));
+        return false;
       } catch (err) {
         alert('Print failed: ' + err.message);
+        return false;
       }
     } else {
       const iframe = document.createElement('iframe');
@@ -224,7 +227,10 @@ export default function Billing({ onNavigate }) {
           alert('Print failed: ' + e.message);
         }
         document.body.removeChild(iframe);
-      }, 200);
+      }, 500);
+      // Browser fallback has no reliable result signal, so treat it as
+      // "sent" (best-effort) and let the sale-complete flow continue.
+      return true;
     }
   };
 
@@ -474,11 +480,13 @@ export default function Billing({ onNavigate }) {
       clearCart();
       if (inlineCustomerPhoneRef.current) inlineCustomerPhoneRef.current.value = '';
       if (inlineCustomerNameRef.current) inlineCustomerNameRef.current.value = '';
-      setTimeout(async () => {
-        await printBillFromData(res);
+      // Print and only close the preview if printing actually succeeded, so the
+      // cashier never loses the bill when a printer fails or is unavailable.
+      const printed = await printBillFromData(res);
+      if (printed) {
         setBillPreview(null);
         searchRef.current?.focus();
-      }, 100);
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -488,9 +496,13 @@ export default function Billing({ onNavigate }) {
 
   const handlePrint = async () => {
     if (!billPreview) return;
-    await printBillFromData(billPreview);
-    setBillPreview(null);
-    searchRef.current?.focus();
+    // Keep the preview open on failure so the cashier can retry printing the
+    // same (already-saved) bill - retrying never creates a duplicate sale.
+    const printed = await printBillFromData(billPreview);
+    if (printed) {
+      setBillPreview(null);
+      searchRef.current?.focus();
+    }
   };
 
   const openRefundModal = () => {
