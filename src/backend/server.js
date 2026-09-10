@@ -16,11 +16,15 @@ const autoSetup = require('./db/autoSetup');
 
 async function startServer() {
   console.log('[SETUP] Running MySQL auto-setup...');
+  console.log(`[SETUP] Connecting to MySQL at ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306} as ${process.env.DB_USER || 'root'}`);
   try {
     await autoSetup();
   } catch (err) {
     console.error('[SETUP] Auto-setup failed:', err.message);
-    console.error('[SETUP] Please check your MySQL connection settings in .env');
+    console.error('[SETUP] MySQL host:', process.env.DB_HOST || '127.0.0.1');
+    console.error('[SETUP] MySQL port:', process.env.DB_PORT || 3306);
+    console.error('[SETUP] MySQL user:', process.env.DB_USER || 'root');
+    console.error('[SETUP] Please check your MySQL connection settings in config.env');
     process.exit(1);
   }
 

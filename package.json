@@ -1,9 +1,9 @@
 {
   "name": "pharmacy-management",
   "version": "1.0.0",
-  "description": "Medical Store Inventory Management System with Electron, React, and MySQL",
+  "description": "Medical Store Inventory Management System",
   "main": "electron.js",
-  "keywords": ["pharmacy", "inventory", "electron", "medical-store"],
+  "keywords": ["pharmacy", "inventory", "medical-store"],
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -51,7 +51,7 @@
       "electron.js",
       "preload.js",
       "src/**/*",
-      "public/**/*",
+      "public",
       "tools/node/**/*"
     ],
     "asar": false,

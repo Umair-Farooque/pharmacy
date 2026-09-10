@@ -9,6 +9,7 @@ async function autoSetup() {
     port: parseInt(process.env.DB_PORT) || 3306,
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
+    connectTimeout: 10000,
   });
 
   try {
@@ -25,6 +26,7 @@ async function autoSetup() {
     password: process.env.DB_PASSWORD || '',
     database: dbName,
     multipleStatements: true,
+    connectTimeout: 10000,
   });
 
   const run = async (sql, msg) => {

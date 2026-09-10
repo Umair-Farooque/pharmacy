@@ -82,22 +82,60 @@ function getServerUrl() {
 function stopServer() {
   if (serverProcess) {
     try {
-      serverProcess.kill();
+      serverProcess.kill('SIGKILL');
     } catch (e) {}
     serverProcess = null;
   }
 }
 
+// Kill any process occupying port 3000 (orphaned server from prev crash)
+function killPortProcess(port) {
+  return new Promise((resolve) => {
+    try {
+      const { execSync } = require('child_process');
+      // Find PID using netstat
+      const result = execSync(
+        `netstat -ano | findstr :${port}`,
+        { timeout: 3000, windowsHide: true }
+      ).toString();
+      const lines = result.split('\n');
+      const pids = new Set();
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        // Format: Proto  Local  Foreign  State  PID
+        if (parts.length >= 5 && line.includes(`0.0.0.0:${port}`)) {
+          const pid = parseInt(parts[parts.length - 1]);
+          if (pid && !isNaN(pid) && pid !== process.pid) pids.add(pid);
+        }
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, windowsHide: true });
+          console.log(`[ELECTRON] Killed orphaned process PID ${pid} on port ${port}`);
+        } catch (e) {
+          // PID already gone or no permission
+        }
+      }
+    } catch (e) {
+      // netstat failed or port was free - that's fine
+    }
+    resolve();
+  });
+}
+
 let serverOutput = '';
 let serverExitError = null;
 
-function startServer() {
+async function startServer() {
   if (serverProcess && !serverProcess.killed) {
     return;
   }
 
   serverOutput = '';
   serverExitError = null;
+
+  // Free port 3000 from any previous orphaned process
+  await killPortProcess(3000);
 
   const isProd = app.isPackaged;
   const serverPath = isProd
@@ -162,8 +200,14 @@ function startServer() {
     console.warn(`[ELECTRON] Server process exited with code ${code} signal ${signal}`);
     if (code !== 0 && code !== null) {
       const lines = serverOutput.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const lastLines = lines.slice(-4).join('; ');
-      serverExitError = lastLines || `Server process exited unexpectedly (code ${code})`;
+      // Extract the most meaningful error line
+      const errorLine = lines.find(l =>
+        l.includes('EADDRINUSE') || l.includes('Access denied') ||
+        l.includes('Failed to start') || l.includes('Auto-setup failed') ||
+        l.includes('ECONNREFUSED') || l.includes('ER_')
+      );
+      const lastLines = lines.slice(-5).join(' | ');
+      serverExitError = errorLine || lastLines || `Server process exited unexpectedly (code ${code})`;
     }
     serverProcess = null;
   });
@@ -367,7 +411,7 @@ app.whenReady().then(async () => {
     showSetupPage();
   } else if (isServerMode()) {
     console.log('[ELECTRON] Configured as Server PC - starting backend...');
-    startServer();
+    await startServer();
     try {
       await waitForServer(`${getServerUrl()}/api/health`, 25000);
       console.log('[ELECTRON] Server ready, checking pending restore...');
@@ -550,7 +594,7 @@ ipcMain.handle('launch-app', async (event, payload = {}) => {
     const isServer = payload.mode ? payload.mode === 'server' : isServerMode();
     if (isServer) {
       console.log('[IPC] Launching app in Server Mode...');
-      startServer();
+      await startServer();
       await waitForServer(`${getServerUrl()}/api/health`, 30000);
 
       // Handle custom admin password setup if provided
@@ -595,7 +639,7 @@ ipcMain.handle('open-setup', () => {
 ipcMain.handle('retry-connection', async () => {
   try {
     if (isServerMode()) {
-      startServer();
+      await startServer();
       await waitForServer(`${getServerUrl()}/api/health`, 25000);
       await launchMainApp();
     } else {
