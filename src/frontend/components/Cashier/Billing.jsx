@@ -146,43 +146,64 @@ export default function Billing({ onNavigate }) {
       aggregatedItems[key].line_total += item.line_total;
       aggregatedItems[key].service_charge += item.service_charge || 0;
     }
+    // Physical print page dimensions derived from the configured paper width.
+    // Default to 58mm for a DTP-220 thermal receipt printer unless 80mm is
+    // explicitly selected. body width == paper width; the inner .receipt holds
+    // the printable area (~54mm on 58mm paper) so text is readable and fills the
+    // paper without browser/driver scaling. This is the single, self-contained
+    // print document used by both the Electron path (loaded as-is) and the
+    // browser fallback.
+    const paper = settings.paper_size === '80mm' ? '80mm' : '58mm';
+    const printable = paper === '58mm' ? '54mm' : '76mm';
     const printContent = `
-      <html><head><title>Bill ${saleData.bill_number}</title>
+      <html><head><meta charset="utf-8"><title>Bill ${saleData.bill_number}</title>
       <style>
-        body { font-family: 'Courier New', monospace; margin: 0; padding: 6px; font-size: 15px; font-weight: bold; color: #000; }
+        @page { size: ${paper} auto; margin: 0; }
+        html, body { width: ${paper}; margin: 0; padding: 0; }
+        body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
+        .receipt { width: ${printable}; margin: 0 auto; padding: 1.5mm 0; box-sizing: border-box; }
         .center { text-align: center; }
         .left { text-align: left; }
-        .line { border-top: 2px solid #000; margin: 6px 0; }
+        .line { border-top: 1px solid #000; margin: 6px 0; }
         .row { display: flex; justify-content: space-between; }
+        .shop-name { font-size: 18px; font-weight: bold; margin: 0; }
+        .info { font-size: 12px; font-weight: 600; margin: 2px 0; }
+        .total { font-size: 14px; font-weight: bold; }
       </style></head><body>
-        <div class="center"><h3 style="margin:0;font-size:20px;font-weight:bold;">${settings.shop_name || 'Medical Store'}</h3>
-        <p style="margin:2px 0;font-size:14px;font-weight:bold;">${settings.shop_address || ''}</p>
-        <p style="margin:2px 0;font-size:14px;font-weight:bold;">${settings.shop_phone || ''}${settings.shop_phone2 ? ' | ' + settings.shop_phone2 : ''}</p></div>
-        <div class="line"></div>
-        <p style="margin:2px 0;font-size:14px;font-weight:bold;">Bill #: ${saleData.bill_number}<br/>
-        ${saleData.created_at ? formatDate(saleData.created_at) : 'N/A'}</p>
-        <div class="line"></div>
-        ${Object.values(aggregatedItems).map(item => {
-          const serviceChg = parseFloat(item.service_charge || 0);
-          const itemTotal = item.line_total + serviceChg;
-          const lines = [];
-          lines.push(`<div class="row"><span style="font-size:14px;font-weight:bold;">${item.medicine_name || 'Unknown'}</span><span style="font-size:14px;font-weight:bold;">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span style="font-size:14px;font-weight:bold;">${fmt(item.line_total)}</span></div>`);
-          if (serviceChg > 0) {
-            lines.push(`<div class="row"><span style="font-size:12px;font-weight:bold;color:#555;">  + Service Charge</span><span style="font-size:12px;font-weight:bold;color:#555;">${fmt(serviceChg)}</span></div>`);
-          }
-          return lines.join('');
-        }).join('')}
-        <div class="line"></div>
-        <div class="row"><span style="font-size:14px;font-weight:bold;">Subtotal:</span><span style="font-size:14px;font-weight:bold;">${fmt(saleData.subtotal || 0)}</span></div>
-        ${saleData.discount_amount > 0 ? `<div class="row"><span style="font-size:14px;font-weight:bold;">Discount:</span><span style="font-size:14px;font-weight:bold;">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
-        <div class="row"><strong style="font-size:16px;font-weight:bold;">TOTAL:</strong><strong style="font-size:16px;font-weight:bold;">Rs. ${fmt(saleData.final_amount || 0)}</strong></div>
-        <div class="line"></div>
-        <div class="left"><p style="font-size:14px;font-weight:bold;">Payment: ${saleData.payment_method || 'CASH'}</p>
-        <p style="font-size:14px;font-weight:bold;">Medicines can be Returned within 7 days.</p>
-        <p style="font-size:14px;font-weight:bold;">Thank you! Visit Again</p></div>
-        <div class="line"></div>
-        <div class="center"><p style="font-size:13px;font-weight:bold;">BunnySystems &nbsp;&nbsp; 030862629</p></div>
-        <div class="line"></div>
+        <div class="receipt">
+          <div class="center">
+            <h3 class="shop-name">${settings.shop_name || 'Medical Store'}</h3>
+            <p class="info">${settings.shop_address || ''}</p>
+            <p class="info">${settings.shop_phone || ''}${settings.shop_phone2 ? ' | ' + settings.shop_phone2 : ''}</p>
+          </div>
+          <div class="line"></div>
+          <p class="info">Bill #: ${saleData.bill_number}<br/>
+          ${saleData.created_at ? formatDate(saleData.created_at) : 'N/A'}</p>
+          <div class="line"></div>
+          ${Object.values(aggregatedItems).map(item => {
+            const serviceChg = parseFloat(item.service_charge || 0);
+            const itemTotal = item.line_total + serviceChg;
+            const lines = [];
+            lines.push(`<div class="row info"><span>${item.medicine_name || 'Unknown'}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(item.line_total)}</span></div>`);
+            if (serviceChg > 0) {
+              lines.push(`<div class="row info"><span>  + Service Charge</span><span>${fmt(serviceChg)}</span></div>`);
+            }
+            return lines.join('');
+          }).join('')}
+          <div class="line"></div>
+          <div class="row info"><span>Subtotal:</span><span>${fmt(saleData.subtotal || 0)}</span></div>
+          ${saleData.discount_amount > 0 ? `<div class="row info"><span>Discount:</span><span>-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
+          <div class="row total"><strong>TOTAL:</strong><strong>Rs. ${fmt(saleData.final_amount || 0)}</strong></div>
+          <div class="line"></div>
+          <div class="left">
+            <p class="info">Payment: ${saleData.payment_method || 'CASH'}</p>
+            <p class="info">Medicines can be Returned within 7 days.</p>
+            <p class="info">Thank you! Visit Again</p>
+          </div>
+          <div class="line"></div>
+          <div class="center"><p class="info">BunnySystems &nbsp;&nbsp; 030862629</p></div>
+          <div class="line"></div>
+        </div>
       </body></html>
     `;
 

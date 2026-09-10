@@ -935,13 +935,32 @@ async function printHtml({ html, printerName, paperWidth }) {
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
 
-    const content = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <style>
-        body { font-family: 'Courier New', monospace; margin: 0; padding: 8px; }
-        .center { text-align: center; }
-        .line { border-top: 1px dashed #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; }
-      </style></head><body>${html}</body></html>`;
+    // Deliver a single, controlled print document. Full documents from Billing.jsx
+    // already own their physical page (@page + body width + fonts, so the driver
+    // renders at native size) and are loaded as-is. Short fragments (e.g. the
+    // Settings test-print) are wrapped here with the canonical 58mm/80mm portrait
+    // page so the driver gets native-size, zero-margin, full-width output instead
+    // of a scaled, side-margined layout. We never nest one full document inside
+    // another - the old wrapper added an extra body padding box on top of
+    // Billing.jsx's body padding, which produced doubled margins and tiny print.
+    let content = html || '';
+    const isFullDocument = /<html[\s>]/i.test(html || '');
+    if (!isFullDocument) {
+      const paper = paperWidth === '58mm' ? 58 : 80; // mm
+      const pageWidth = `${paper}mm`;
+      const printable = paper === 58 ? '54mm' : '76mm';
+      content = `<!DOCTYPE html><html><head><meta charset="utf-8">
+        <style>
+          @page { size: ${pageWidth} auto; margin: 0; }
+          html, body { width: ${pageWidth}; margin: 0; padding: 0; }
+          body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
+          .receipt { width: ${printable}; margin: 0 auto; padding: 1.5mm 0; box-sizing: border-box; }
+          .center { text-align: center; }
+          .left { text-align: left; }
+          .line { border-top: 1px solid #000; margin: 6px 0; }
+          .row { display: flex; justify-content: space-between; }
+        </style></head><body><div class="receipt">${html}</div></body></html>`;
+    }
 
     // Unique temp name so rapid, repeated prints can never collide.
     tempFile = path.join(os.tmpdir(), `bill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.html`);
@@ -996,6 +1015,7 @@ async function printHtml({ html, printerName, paperWidth }) {
             printBackground: true,
             pageSize: { width: pageWidthMicrons, height: pageHeightMicrons },
             margins: { marginType: 'none' },
+            landscape: false,
           },
           (success, failureReason) => finish({ success: !!success, failureReason })
         );
