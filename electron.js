@@ -6,6 +6,15 @@ const os = require('os');
 const { spawn } = require('child_process');
 const mysql = require('mysql2/promise');
 
+// =====================================================================
+// BUILD IDENTIFIER (temporary diagnostics - do not remove until the DTP-220
+// packaged-vs-dev mystery is resolved).
+// =====================================================================
+console.log('[BUILD-ID] Pharmacy Print Build: 2026-09-10-PACKAGED-DIAGNOSTIC');
+console.log('[BUILD-ID] __dirname:', __dirname);
+console.log('[BUILD-ID] isPackaged:', app.isPackaged);
+console.log('[BUILD-ID] resourcesPath:', process.resourcesPath);
+
 let mainWindow;
 let serverProcess = null;
 let pendingRestorePath = null;
@@ -1063,7 +1072,7 @@ body {
     const device = printerName || undefined;
 
     const printOptions = {
-      silent: !!printerName,
+      silent: false,
       deviceName: printerName || undefined,
       copies: 1,
       printBackground: true,
@@ -1085,6 +1094,16 @@ body {
     console.log('[PRINT] pageWidthMicrons:', pageWidthMicrons);
     console.log('[PRINT] pageHeightMicrons:', pageHeightMicrons);
     console.log('[PRINT] printOptions:', JSON.stringify(printOptions, null, 2));
+    console.log('[PRINT-BUILD] Using CURRENT thermal print implementation');
+    console.log('[PRINT-BUILD] isPackaged:', app.isPackaged);
+    console.log('[PRINT-BUILD] paperWidth:', paperWidth);
+    console.log('[PRINT-BUILD] pageSize:', {
+        width: pageWidthMicrons,
+        height: pageHeightMicrons
+    });
+    console.log('[PRINT-BUILD] html length:', html?.length);
+    console.log('[PRINT-BUILD] contains <html>:', /<html[\s>]/i.test(html || ''));
+    console.log('[PRINT-BUILD] contains #receipt:', /id=["']receipt["']/i.test(html || ''));
     console.log(`[PRINT] Sending to printer: ${device || '(default)'} (silent)`);
 
     // Callback-based webContents.print() - Electron 26 has no Promise form.

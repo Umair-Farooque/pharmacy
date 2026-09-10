@@ -185,6 +185,7 @@ export default function Billing({ onNavigate }) {
           </div>
           <div class="line"></div>
           <div class="center"><p class="info">BunnySystems &nbsp;&nbsp; 030862629</p></div>
+          <div class="center"><p class="info">PRINT BUILD: 2026-09-10-PACKAGED-DIAGNOSTIC</p></div>
           <div class="line"></div>
     `;
 
