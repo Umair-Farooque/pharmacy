@@ -887,17 +887,22 @@ function loadFileWithTimeout(win, filePath, timeoutMs) {
   });
 }
 
-// Measure the rendered bill and return the exact micron page size for the
-// selected paper width (58mm / 80mm). Height always tracks the real content so
-// longer bills are not truncated and short bills do not produce blank paper.
-async function measurePageSize(webContents, paperWidth) {
-  const metrics = await webContents.executeJavaScript(
-    "({ w: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth), h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight) })"
-  );
-  const pxToMicrons = (px) => Math.max(352, Math.round(px * 25400 / 96));
-  const pageWidthMicrons = paperWidth === '58mm' ? 58000 : 80000;
-  const pageHeightMicrons = Math.max(352, pxToMicrons(metrics.h + 16));
-  return { pageWidthMicrons, pageHeightMicrons, w: metrics.w, h: metrics.h };
+// Measure the actual receipt element (#receipt) in CSS pixels and return it.
+// We deliberately measure the RECEIPT element's laid-out bounding box - NOT the
+// browser window viewport, NOT scrollHeight, NOT clientHeight. The hidden print
+// window's initial height must never become the thermal paper height.
+async function measureReceipt(webContents) {
+  const metrics = await webContents.executeJavaScript(`
+    (() => {
+      const receipt = document.getElementById('receipt');
+      if (!receipt) {
+        throw new Error('Receipt element #receipt was not found');
+      }
+      const rect = receipt.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    })()
+  `);
+  return metrics;
 }
 
 async function printHtml({ html, printerName, paperWidth }) {
@@ -927,10 +932,12 @@ async function printHtml({ html, printerName, paperWidth }) {
   try {
     // Render at the real receipt width in a HIDDEN window (no pop-up, no dialog).
     const renderWidth = paperWidth === '58mm' ? 219 : 302; // CSS px (~58/80mm @ 96dpi)
+    // Small initial height: the viewport must NEVER become the thermal paper
+    // height. The receipt's own laid-out bounding box determines page height.
     win = new BrowserWindow({
       show: false,
       width: renderWidth,
-      height: 800,
+      height: 100,
       useContentSize: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
@@ -953,14 +960,14 @@ async function printHtml({ html, printerName, paperWidth }) {
           @page { size: ${pageWidth} auto; margin: 0; }
           html, body { width: ${pageWidth}; margin: 0; padding: 0; }
           body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-          .receipt { width: 100%; margin: 0; padding: 1.5mm 2mm; box-sizing: border-box; }
+          #receipt { width: ${pageWidth}; box-sizing: border-box; margin: 0; padding: 1.5mm 2mm; }
           .center { text-align: center; }
           .left { text-align: left; }
           .line { border-top: 1px solid #000; margin: 6px 0; }
-          .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; }
-          .row .name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
-          .row .qty, .row .amt { flex: 0 0 auto; white-space: nowrap; text-align: right; }
-        </style></head><body><div class="receipt">${html}</div></body></html>`;
+          .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 2mm; width: 100%; box-sizing: border-box; }
+          .item-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+          .item-qty, .item-price { text-align: right; white-space: nowrap; }
+        </style></head><body><div id="receipt">${html}</div></body></html>`;
     }
 
     // Unique temp name so rapid, repeated prints can never collide.
@@ -970,15 +977,21 @@ async function printHtml({ html, printerName, paperWidth }) {
     // Wait for the print window to finish loading (honours failure + timeout).
     await loadFileWithTimeout(win, tempFile, PRINT_LOAD_TIMEOUT_MS);
 
-    const { pageWidthMicrons, pageHeightMicrons, w, h } = await measurePageSize(win.webContents, paperWidth);
-    console.log(`[PRINT] pageSize ${pageWidthMicrons}x${pageHeightMicrons} microns (content ${w}x${h}px)`);
+    // Measure the actual #receipt element (never the window viewport) and derive
+    // the physical page height from the real receipt content.
+    const metrics = await measureReceipt(win.webContents);
+    const pxToMicrons = (px) => Math.max(352, Math.round(px * 25400 / 96));
+    const pageWidthMicrons = paperWidth === '58mm' ? 58000 : 80000;
+    // Only a tiny (~2mm) safety pad; +8 CSS px @ 96dpi converts to ~2.1mm.
+    const pageHeightMicrons = pxToMicrons(metrics.height + 8);
 
     // Resolve the target printer. A configured printer (per-PC choice stored in
     // localStorage, or the shared setting) MUST actually exist on THIS computer.
     // We never silently fall back to the default printer and we never claim
     // success for a printer that is not installed.
+    const printers = await win.webContents.getPrintersAsync();
+
     if (printerName) {
-      const printers = await win.webContents.getPrintersAsync();
       const printerExists = printers.some((p) => p.name === printerName);
       if (!printerExists) {
         cleanup();
@@ -990,6 +1003,27 @@ async function printHtml({ html, printerName, paperWidth }) {
       }
     }
     const device = printerName || undefined;
+
+    const printOptions = {
+      silent: !!printerName,
+      deviceName: printerName || undefined,
+      copies: 1,
+      printBackground: true,
+      landscape: false,
+      margins: {
+        marginType: 'none'
+      },
+      pageSize: {
+        width: pageWidthMicrons,
+        height: pageHeightMicrons
+      }
+    };
+
+    // Temporary diagnostic logging so the actual print values are visible.
+    console.log('[PRINT] Receipt dimensions:', metrics);
+    console.log('[PRINT] Page width microns:', pageWidthMicrons);
+    console.log('[PRINT] Page height microns:', pageHeightMicrons);
+    console.log('[PRINT] Print options:', JSON.stringify(printOptions, null, 2));
     console.log(`[PRINT] Sending to printer: ${device || '(default)'} (silent)`);
 
     // Callback-based webContents.print() - Electron 26 has no Promise form.
@@ -1009,15 +1043,7 @@ async function printHtml({ html, printerName, paperWidth }) {
       }, PRINT_JOB_TIMEOUT_MS);
       try {
         win.webContents.print(
-          {
-            silent: true,
-            deviceName: device,
-            copies: 1,
-            printBackground: true,
-            pageSize: { width: pageWidthMicrons, height: pageHeightMicrons },
-            margins: { marginType: 'none' },
-            landscape: false,
-          },
+          printOptions,
           (success, failureReason) => finish({ success: !!success, failureReason })
         );
       } catch (printErr) {

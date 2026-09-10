@@ -160,18 +160,18 @@ export default function Billing({ onNavigate }) {
         @page { size: ${paper} auto; margin: 0; }
         html, body { width: ${paper}; margin: 0; padding: 0; }
         body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-        .receipt { width: 100%; margin: 0; padding: 1.5mm 2mm; box-sizing: border-box; }
+        #receipt { width: ${paper}; box-sizing: border-box; margin: 0; padding: 1.5mm 2mm; }
         .center { text-align: center; }
         .left { text-align: left; }
         .line { border-top: 1px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; }
-        .row .name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
-        .row .qty, .row .amt { flex: 0 0 auto; white-space: nowrap; text-align: right; }
+        .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 2mm; width: 100%; box-sizing: border-box; }
+        .item-name { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+        .item-qty, .item-price { text-align: right; white-space: nowrap; }
         .shop-name { font-size: 18px; font-weight: bold; margin: 0; }
         .info { font-size: 12px; font-weight: 600; margin: 2px 0; }
         .total { font-size: 14px; font-weight: bold; }
       </style></head><body>
-        <div class="receipt">
+        <div id="receipt">
           <div class="center">
             <h3 class="shop-name">${settings.shop_name || 'Medical Store'}</h3>
             <p class="info">${settings.shop_address || ''}</p>
@@ -185,16 +185,16 @@ export default function Billing({ onNavigate }) {
             const serviceChg = parseFloat(item.service_charge || 0);
             const itemTotal = item.line_total + serviceChg;
             const lines = [];
-            lines.push(`<div class="row info"><span class="name">${item.medicine_name || 'Unknown'}</span><span class="qty">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span class="amt">${fmt(item.line_total)}</span></div>`);
+            lines.push(`<div class="row info"><span class="item-name">${item.medicine_name || 'Unknown'}</span><span class="item-qty">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span class="item-price">${fmt(item.line_total)}</span></div>`);
             if (serviceChg > 0) {
-              lines.push(`<div class="row info"><span class="name">  + Service Charge</span><span class="amt">${fmt(serviceChg)}</span></div>`);
+              lines.push(`<div class="row info"><span class="item-name">  + Service Charge</span><span class="item-qty"></span><span class="item-price">${fmt(serviceChg)}</span></div>`);
             }
             return lines.join('');
           }).join('')}
           <div class="line"></div>
-          <div class="row info"><span class="name">Subtotal:</span><span class="amt">${fmt(saleData.subtotal || 0)}</span></div>
-          ${saleData.discount_amount > 0 ? `<div class="row info"><span class="name">Discount:</span><span class="amt">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
-          <div class="row total"><span class="name">TOTAL:</span><span class="amt">Rs. ${fmt(saleData.final_amount || 0)}</span></div>
+          <div class="row info"><span class="item-name">Subtotal:</span><span class="item-qty"></span><span class="item-price">${fmt(saleData.subtotal || 0)}</span></div>
+          ${saleData.discount_amount > 0 ? `<div class="row info"><span class="item-name">Discount:</span><span class="item-qty"></span><span class="item-price">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
+          <div class="row total"><span class="item-name">TOTAL:</span><span class="item-qty"></span><span class="item-price">Rs. ${fmt(saleData.final_amount || 0)}</span></div>
           <div class="line"></div>
           <div class="left">
             <p class="info">Payment: ${saleData.payment_method || 'CASH'}</p>
