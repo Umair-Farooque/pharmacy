@@ -188,9 +188,12 @@ export default function Billing({ onNavigate }) {
 
     if (window.electronAPI && window.electronAPI.printBill) {
       try {
+        // Per-PC printer choice (localStorage) with fallback to the shared
+        // setting - so a client PC can print to a printer attached to either PC.
+        const printerName = localStorage.getItem('printer_name') || settings.printer_name || null;
         const result = await window.electronAPI.printBill(
           printContent,
-          settings.printer_name || null,
+          printerName,
           settings.paper_size || '80mm'
         );
         if (!result?.success) {

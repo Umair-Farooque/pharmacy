@@ -5,6 +5,11 @@ export default function Users() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetError, setResetError] = useState('');
 
   const loadUsers = async () => {
     try {
@@ -29,13 +34,32 @@ export default function Users() {
   };
 
   const resetPassword = async (id) => {
-    const newPass = prompt('Enter new password:');
-    if (!newPass) return;
+    // window.prompt() is NOT supported in Electron - use the modal instead.
+    setResetTarget(users.find(u => u.id === id) || null);
+  };
+
+  const doResetPassword = async () => {
+    if (!resetTarget) return;
+    if (!newPassword || newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match');
+      return;
+    }
+    setResetSaving(true);
+    setResetError('');
     try {
-      await api.post(`/users/${id}/reset-password`, { new_password: newPass });
+      await api.post(`/users/${resetTarget.id}/reset-password`, { new_password: newPassword });
+      setResetTarget(null);
+      setNewPassword('');
+      setConfirmPassword('');
       alert('Password reset successfully');
     } catch (err) {
-      alert(err.message);
+      setResetError(err.message);
+    } finally {
+      setResetSaving(false);
     }
   };
 
@@ -95,6 +119,32 @@ export default function Users() {
       )}
 
       {showAdd && <AddUserModal onClose={() => setShowAdd(false)} onSave={() => { setShowAdd(false); loadUsers(); }} />}
+
+      {resetTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Reset Password</h3>
+            <p className="text-sm text-gray-500 mb-4">for user <span className="font-medium text-gray-700">{resetTarget.username}</span></p>
+            {resetError && <p className="text-red-600 text-sm mb-3">{resetError}</p>}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password *</label>
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password *</label>
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div className="flex justify-end space-x-3 pt-2">
+                <button type="button" onClick={() => { setResetTarget(null); setNewPassword(''); setConfirmPassword(''); setResetError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button onClick={doResetPassword} disabled={resetSaving} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {resetSaving ? 'Saving...' : 'Reset Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

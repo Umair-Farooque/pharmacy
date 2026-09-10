@@ -52,7 +52,8 @@
       "preload.js",
       "src/**/*",
       "public",
-      "tools/node/**/*"
+      "tools/node/**/*",
+      "scripts/reset-admin-password.js"
     ],
     "asar": false,
     "npmRebuild": false,

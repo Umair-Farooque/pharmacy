@@ -44,6 +44,33 @@ export default function Settings() {
     }
   };
 
+  const handleTestPrint = async () => {
+    if (!window.electronAPI || !window.electronAPI.printBill) {
+      alert('Printing is only available in the desktop app.');
+      return;
+    }
+    const printerName = localStorage.getItem('printer_name') || settings.printer_name || null;
+    const html = `
+      <div class="center"><h3 style="font-size:20px;">${settings.shop_name || 'Test Store'}</h3></div>
+      <div class="line"></div>
+      <p>PRINT TEST</p>
+      <p>${new Date().toLocaleString()}</p>
+      <p>Printer selected: ${printerName || '(default printer)'}</p>
+      <div class="line"></div>
+      <p>If you can read this, printing works.</p>
+      <div class="line"></div>`;
+    try {
+      const result = await window.electronAPI.printBill(html, printerName, settings.paper_size || '80mm');
+      if (!result?.success) {
+        alert('Test print failed: ' + (result?.error || 'Unknown error'));
+      } else {
+        alert('Test print sent successfully.');
+      }
+    } catch (err) {
+      alert('Test print failed: ' + err.message);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -282,8 +309,12 @@ export default function Settings() {
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Printer</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Thermal Printer</label>
-              <select value={settings.printer_name || ''} onChange={e => update('printer_name', e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Thermal Printer (this PC)</label>
+              <select value={localStorage.getItem('printer_name') ?? (settings.printer_name || '')} onChange={e => {
+                const val = e.target.value;
+                if (val) localStorage.setItem('printer_name', val); else localStorage.removeItem('printer_name');
+                update('printer_name', val);
+              }} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                 <option value="">Default Printer</option>
                 {(printers || []).map((p, i) => <option key={i} value={p.name}>{p.name}{p.isDefault ? ' (Default)' : ''}</option>)}
               </select>
@@ -295,6 +326,12 @@ export default function Settings() {
                 <option value="58mm">58mm</option>
               </select>
             </div>
+          </div>
+          <div className="mt-4">
+            <button onClick={handleTestPrint} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">
+              🖨️ Test Print
+            </button>
+            <p className="text-xs text-gray-500 mt-1">Sends a test receipt to the printer selected above. Use this to verify printing on this PC.</p>
           </div>
         </div>
 

@@ -4,6 +4,68 @@ const path = require('path');
 const db = require('../db');
 const { logAudit } = require('../middleware');
 
+// Resolve mysql/mysqldump binaries. The packaged app must not rely on the
+// customer having the tools in PATH - MySQL Server installs them in its bin dir.
+let cachedBinaryDir = null;
+function resolveMysqlBinDir() {
+  if (cachedBinaryDir && fs.existsSync(cachedBinaryDir)) return cachedBinaryDir;
+  if (process.env.MYSQL_BIN_DIR && fs.existsSync(process.env.MYSQL_BIN_DIR)) {
+    cachedBinaryDir = process.env.MYSQL_BIN_DIR;
+    return cachedBinaryDir;
+  }
+  const roots = [
+    'C:\\Program Files\\MySQL',
+    'C:\\Program Files (x86)\\MySQL',
+  ];
+  for (const root of roots) {
+    try {
+      if (!fs.existsSync(root)) continue;
+      const servers = fs.readdirSync(root)
+        .filter(d => d.startsWith('MySQL Server'))
+        .sort()
+        .reverse(); // prefer newest version
+      for (const srv of servers) {
+        const bin = path.join(root, srv, 'bin');
+        if (fs.existsSync(path.join(bin, 'mysqldump.exe'))) {
+          cachedBinaryDir = bin;
+          return cachedBinaryDir;
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+  // XAMPP / WAMP fallbacks
+  const extra = [
+    'C:\\xampp\\mysql\\bin',
+    'C:\\wamp64\\bin\\mysql',
+    'C:\\wamp\\bin\\mysql',
+  ];
+  for (const dir of extra) {
+    try {
+      if (dir.endsWith('mysql\\bin') || dir.endsWith('mysql')) {
+        if (fs.existsSync(path.join(dir, 'mysqldump.exe'))) { cachedBinaryDir = dir; return cachedBinaryDir; }
+      }
+      if (fs.existsSync(dir)) {
+        const versions = fs.readdirSync(dir).sort().reverse();
+        for (const v of versions) {
+          const bin = path.join(dir, v, 'bin');
+          if (fs.existsSync(path.join(bin, 'mysqldump.exe'))) { cachedBinaryDir = bin; return cachedBinaryDir; }
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+  return null;
+}
+
+function resolveMysqlTool(name) {
+  const exe = process.platform === 'win32' ? `${name}.exe` : name;
+  const binDir = resolveMysqlBinDir();
+  if (binDir) {
+    const full = path.join(binDir, exe);
+    if (fs.existsSync(full)) return full;
+  }
+  return null; // fall back to PATH lookup
+}
+
 function getBackupDir(reqBackupDir) {
   if (reqBackupDir && typeof reqBackupDir === 'string' && reqBackupDir.trim()) {
     return path.resolve(reqBackupDir.trim());
@@ -86,8 +148,11 @@ async function createBackup(req, res) {
     const filename = `pharmacy_backup_${timestamp}.sql`;
     const filepath = path.join(backupDir, filename);
     const args = mysqldumpCommand();
+    const dumpPath = resolveMysqlTool('mysqldump');
+    console.log(`[BACKUP] Using mysqldump: ${dumpPath || 'PATH fallback'}`);
+    if (!dumpPath) console.warn('[BACKUP] mysqldump.exe not found in MySQL installation folders - trying PATH');
 
-    const mysqldump = spawn('mysqldump', args);
+    const mysqldump = spawn(dumpPath || 'mysqldump', args);
 
     const writeStream = fs.createWriteStream(filepath);
     mysqldump.stdout.pipe(writeStream);
@@ -113,7 +178,10 @@ async function createBackup(req, res) {
     mysqldump.on('error', async err => {
       try { fs.unlinkSync(filepath); } catch (e) {}
       await logAudit(req.user.id, 'BACKUP_FAILED', null, null, { error: err.message });
-      res.status(500).json({ error: 'Failed to start mysqldump. Is it installed and in PATH?' });
+      res.status(500).json({ error:
+        (dumpPath
+          ? `Failed to start mysqldump at ${dumpPath}: ${err.message}`
+          : 'mysqldump.exe was not found. Searched MYSQL_BIN_DIR, C:\\Program Files\\MySQL\\MySQL Server *\\bin, C:\\xampp\\mysql\\bin and PATH. Install MySQL Server (full, not just the service) or set MYSQL_BIN_DIR.') });
     });
   } catch (err) {
     console.error('[BACKUP] Create error:', err.message);
@@ -133,7 +201,7 @@ async function restoreBackup(req, res) {
     const safetyTimestamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
     const safetyFile = path.join(backupDir, `pre_restore_backup_${safetyTimestamp}.sql`);
 
-    const mysqldump = spawn('mysqldump', mysqldumpCommand());
+    const mysqldump = spawn(resolveMysqlTool('mysqldump') || 'mysqldump', mysqldumpCommand());
     const safetyStream = fs.createWriteStream(safetyFile);
     mysqldump.stdout.pipe(safetyStream);
 
@@ -156,7 +224,8 @@ async function restoreBackup(req, res) {
     });
 
     const mysqlArgs = mysqlCommand();
-    const mysqlProc = spawn('mysql', mysqlArgs);
+    const mysqlPath = resolveMysqlTool('mysql');
+    const mysqlProc = spawn(mysqlPath || 'mysql', mysqlArgs);
     const readStream = fs.createReadStream(backupPath);
     readStream.pipe(mysqlProc.stdin);
 
@@ -174,7 +243,9 @@ async function restoreBackup(req, res) {
 
     mysqlProc.on('error', async err => {
       await logAudit(req.user.id, 'RESTORE_FAILED', null, null, { error: err.message, file: filename });
-      res.status(500).json({ error: 'Failed to start mysql. Is it installed and in PATH?' });
+      res.status(500).json({ error: mysqlPath
+        ? `Failed to start mysql at ${mysqlPath}: ${err.message}`
+        : 'mysql.exe was not found. Searched MYSQL_BIN_DIR, C:\\Program Files\\MySQL\\MySQL Server *\\bin, C:\\xampp\\mysql\\bin and PATH.' });
     });
   } catch (err) {
     console.error('[BACKUP] Restore error:', err.message);
