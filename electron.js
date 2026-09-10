@@ -948,17 +948,18 @@ async function printHtml({ html, printerName, paperWidth }) {
     if (!isFullDocument) {
       const paper = paperWidth === '58mm' ? 58 : 80; // mm
       const pageWidth = `${paper}mm`;
-      const printable = paper === 58 ? '54mm' : '76mm';
       content = `<!DOCTYPE html><html><head><meta charset="utf-8">
         <style>
           @page { size: ${pageWidth} auto; margin: 0; }
           html, body { width: ${pageWidth}; margin: 0; padding: 0; }
           body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-          .receipt { width: ${printable}; margin: 0 auto; padding: 1.5mm 0; box-sizing: border-box; }
+          .receipt { width: 100%; margin: 0; padding: 1.5mm 2mm; box-sizing: border-box; }
           .center { text-align: center; }
           .left { text-align: left; }
           .line { border-top: 1px solid #000; margin: 6px 0; }
-          .row { display: flex; justify-content: space-between; }
+          .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; }
+          .row .name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+          .row .qty, .row .amt { flex: 0 0 auto; white-space: nowrap; text-align: right; }
         </style></head><body><div class="receipt">${html}</div></body></html>`;
     }
 

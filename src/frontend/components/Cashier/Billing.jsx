@@ -154,18 +154,19 @@ export default function Billing({ onNavigate }) {
     // print document used by both the Electron path (loaded as-is) and the
     // browser fallback.
     const paper = settings.paper_size === '80mm' ? '80mm' : '58mm';
-    const printable = paper === '58mm' ? '54mm' : '76mm';
     const printContent = `
       <html><head><meta charset="utf-8"><title>Bill ${saleData.bill_number}</title>
       <style>
         @page { size: ${paper} auto; margin: 0; }
         html, body { width: ${paper}; margin: 0; padding: 0; }
         body { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.25; font-weight: 600; color: #000; }
-        .receipt { width: ${printable}; margin: 0 auto; padding: 1.5mm 0; box-sizing: border-box; }
+        .receipt { width: 100%; margin: 0; padding: 1.5mm 2mm; box-sizing: border-box; }
         .center { text-align: center; }
         .left { text-align: left; }
         .line { border-top: 1px solid #000; margin: 6px 0; }
-        .row { display: flex; justify-content: space-between; }
+        .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; }
+        .row .name { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+        .row .qty, .row .amt { flex: 0 0 auto; white-space: nowrap; text-align: right; }
         .shop-name { font-size: 18px; font-weight: bold; margin: 0; }
         .info { font-size: 12px; font-weight: 600; margin: 2px 0; }
         .total { font-size: 14px; font-weight: bold; }
@@ -184,16 +185,16 @@ export default function Billing({ onNavigate }) {
             const serviceChg = parseFloat(item.service_charge || 0);
             const itemTotal = item.line_total + serviceChg;
             const lines = [];
-            lines.push(`<div class="row info"><span>${item.medicine_name || 'Unknown'}</span><span>${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span>${fmt(item.line_total)}</span></div>`);
+            lines.push(`<div class="row info"><span class="name">${item.medicine_name || 'Unknown'}</span><span class="qty">${item.quantity} x ${fmt(item.selling_rate_per_unit)}</span><span class="amt">${fmt(item.line_total)}</span></div>`);
             if (serviceChg > 0) {
-              lines.push(`<div class="row info"><span>  + Service Charge</span><span>${fmt(serviceChg)}</span></div>`);
+              lines.push(`<div class="row info"><span class="name">  + Service Charge</span><span class="amt">${fmt(serviceChg)}</span></div>`);
             }
             return lines.join('');
           }).join('')}
           <div class="line"></div>
-          <div class="row info"><span>Subtotal:</span><span>${fmt(saleData.subtotal || 0)}</span></div>
-          ${saleData.discount_amount > 0 ? `<div class="row info"><span>Discount:</span><span>-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
-          <div class="row total"><strong>TOTAL:</strong><strong>Rs. ${fmt(saleData.final_amount || 0)}</strong></div>
+          <div class="row info"><span class="name">Subtotal:</span><span class="amt">${fmt(saleData.subtotal || 0)}</span></div>
+          ${saleData.discount_amount > 0 ? `<div class="row info"><span class="name">Discount:</span><span class="amt">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
+          <div class="row total"><span class="name">TOTAL:</span><span class="amt">Rs. ${fmt(saleData.final_amount || 0)}</span></div>
           <div class="line"></div>
           <div class="left">
             <p class="info">Payment: ${saleData.payment_method || 'CASH'}</p>
