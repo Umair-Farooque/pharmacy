@@ -1,5 +1,12 @@
 const mysql = require('mysql2/promise');
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+if (process.env.CONFIG_PATH && fs.existsSync(process.env.CONFIG_PATH)) {
+  require('dotenv').config({ path: process.env.CONFIG_PATH });
+} else {
+  require('dotenv').config();
+}
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',

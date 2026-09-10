@@ -1,6 +1,4 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const fs = require('fs');
-const path = require('path');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -8,37 +6,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     node: process.versions.node,
     electron: process.versions.electron,
   },
-  saveConfig: (config) => {
-    return ipcRenderer.invoke('save-config', config);
-  },
-  getConfig: () => {
-    return ipcRenderer.invoke('get-config');
-  },
-  getServerIp: () => {
-    return ipcRenderer.invoke('get-server-ip');
-  },
-  restartApp: () => {
-    ipcRenderer.send('restart-app');
-  },
+  saveConfig: (config) => ipcRenderer.invoke('save-config', config),
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  getServerIp: () => ipcRenderer.invoke('get-server-ip'),
+  getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
+  testMysql: (config) => ipcRenderer.invoke('test-mysql', config),
+  testServer: (serverIp, port) => ipcRenderer.invoke('test-server', { serverIp, port }),
+  openSetup: () => ipcRenderer.invoke('open-setup'),
+  launchApp: (payload) => ipcRenderer.invoke('launch-app', payload),
+  retryConnection: () => ipcRenderer.invoke('retry-connection'),
+  restartApp: () => ipcRenderer.send('restart-app'),
   printBill: (html, printerName, paperWidth) => {
     return ipcRenderer.invoke('print-bill', { html, printerName, paperWidth });
   },
-  getPrinters: () => {
-    return ipcRenderer.invoke('get-printers');
-  },
-  selectBackupDir: () => {
-    return ipcRenderer.invoke('select-backup-dir');
-  },
-  selectSqlFile: () => {
-    return ipcRenderer.invoke('select-sql-file');
-  },
-  scheduleRestore: (filePath) => {
-    return ipcRenderer.invoke('schedule-restore', filePath);
-  },
+  getPrinters: () => ipcRenderer.invoke('get-printers'),
+  selectBackupDir: () => ipcRenderer.invoke('select-backup-dir'),
+  selectSqlFile: () => ipcRenderer.invoke('select-sql-file'),
+  scheduleRestore: (filePath) => ipcRenderer.invoke('schedule-restore', filePath),
 });
 
-ipcRenderer.on('restart-app', () => {
-  const { app } = require('electron');
-  app.relaunch();
-  app.exit(0);
-});

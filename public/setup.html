@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Al-Hafiz Pharmacy - System Setup</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --gray-50: #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #f0f4fd 0%, #e2eafc 100%);
+      color: var(--gray-800);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .setup-card {
+      background: #ffffff;
+      width: 100%;
+      max-width: 680px;
+      border-radius: var(--radius);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      border: 1px solid rgba(229, 231, 235, 0.8);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+      color: #ffffff;
+      padding: 28px 32px;
+      text-align: center;
+    }
+
+    .brand-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .brand-subtitle {
+      font-size: 14px;
+      opacity: 0.9;
+      font-weight: 400;
+    }
+
+    .card-body {
+      padding: 32px;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--gray-700);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .mode-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .mode-btn {
+      background: #ffffff;
+      border: 2px solid var(--gray-200);
+      border-radius: var(--radius);
+      padding: 18px 16px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .mode-btn:hover {
+      border-color: var(--primary);
+      background: var(--gray-50);
+    }
+
+    .mode-btn.active {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+    }
+
+    .mode-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .mode-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 4px;
+    }
+
+    .mode-desc {
+      font-size: 12px;
+      color: var(--gray-500);
+      line-height: 1.4;
+    }
+
+    .badge-check {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mode-btn.active .badge-check {
+      display: flex;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gray-700);
+      margin-bottom: 6px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 14px;
+      border: 1.5px solid var(--gray-300);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.15s ease;
+      background: #ffffff;
+      color: var(--gray-900);
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .form-input[readonly] {
+      background: var(--gray-100);
+      cursor: not-allowed;
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .input-with-button {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--gray-100);
+      color: var(--gray-700);
+      border: 1px solid var(--gray-300);
+    }
+
+    .btn-secondary:hover {
+      background: var(--gray-200);
+    }
+
+    .btn-outline {
+      background: #ffffff;
+      color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+
+    .btn-outline:hover {
+      background: var(--primary-light);
+    }
+
+    .btn-lg {
+      padding: 14px 24px;
+      font-size: 16px;
+      width: 100%;
+      border-radius: 10px;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .alert-info {
+      background: var(--primary-light);
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    .alert-success {
+      background: var(--success-light);
+      border: 1px solid #bbf7d0;
+      color: var(--success);
+    }
+
+    .alert-danger {
+      background: var(--danger-light);
+      border: 1px solid #fecaca;
+      color: var(--danger);
+    }
+
+    .alert-warning {
+      background: var(--warning-light);
+      border: 1px solid #fde68a;
+      color: var(--warning);
+    }
+
+    .ip-box {
+      background: #eff6ff;
+      border: 1.5px dashed #93c5fd;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .ip-box-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .ip-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #1d4ed8;
+      letter-spacing: 0.5px;
+    }
+
+    .ip-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e3a8a;
+      font-family: monospace;
+    }
+
+    .checklist {
+      list-style: none;
+      font-size: 13px;
+      color: var(--gray-600);
+      margin: 12px 0 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .checklist li span.bullet {
+      color: var(--primary);
+      font-weight: bold;
+    }
+
+    .tab-pills {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .pill-btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--gray-300);
+      background: var(--gray-50);
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--gray-600);
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .pill-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .spinner-primary {
+      border-color: rgba(37, 99, 235, 0.2);
+      border-top-color: var(--primary);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .password-wrapper {
+      position: relative;
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--gray-500);
+    }
+
+    .status-toast {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="setup-card">
+    <div class="card-header">
+      <div class="brand-title">
+        <span>💊</span> Al-Hafiz Pharmacy
+      </div>
+      <div class="brand-subtitle">
+        System Setup & Role Configuration
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="section-title">Step 1: Select Computer Role</div>
+      <div class="mode-selector">
+        <div id="modeServer" class="mode-btn active" onclick="selectMode('server')">
+          <div class="badge-check">✓</div>
+          <div class="mode-icon">🖥️</div>
+          <div class="mode-title">Server PC</div>
+          <div class="mode-desc">Main computer. Stores MySQL database & serves data.</div>
+        </div>
+        <div id="modeClient" class="mode-btn" onclick="selectMode('client')">
+          <div class="badge-check">✓</div>
+          <div class="mode-icon">💻</div>
+          <div class="mode-title">Client PC</div>
+          <div class="mode-desc">Cashier / counter terminal. Connects to the Server PC.</div>
+        </div>
+      </div>
+
+      <!-- SERVER PC CONFIGURATION PANEL -->
+      <div id="serverPanel">
+        <div class="ip-box">
+          <div class="ip-box-info">
+            <span class="ip-label">📡 This Server's Network IP (For Client PC)</span>
+            <span class="ip-value" id="localIpDisplay">Detecting IP...</span>
+          </div>
+          <button type="button" class="btn btn-secondary" onclick="copyIpAddress()" title="Copy IP to clipboard">
+            📋 Copy IP
+          </button>
+        </div>
+        <div class="alert alert-info">
+          <span>💡</span>
+          <div>
+            <strong>Client PC Connection:</strong> Enter the IP above on your Cashier/Client PC during its setup to connect it to this server.
+          </div>
+        </div>
+
+        <div class="section-title">MySQL Database Settings (Localhost)</div>
+        <p style="font-size: 12px; color: var(--gray-600); margin-bottom: 12px;">
+          MySQL is installed on this Server PC. The database connection host is always <strong>127.0.0.1 (Localhost)</strong>.
+        </p>
+
+        <div class="form-grid-3 form-group">
+          <div>
+            <label class="form-label">Database Host</label>
+            <input type="text" id="dbHost" class="form-input" value="127.0.0.1" readonly style="background:#f3f4f6;cursor:not-allowed;" title="MySQL runs directly on this machine" />
+          </div>
+          <div>
+            <label class="form-label">Port</label>
+            <input type="text" id="dbPort" class="form-input" value="3306" />
+          </div>
+          <div>
+            <label class="form-label">Database Name</label>
+            <input type="text" id="dbName" class="form-input" value="pharmacy_db" />
+          </div>
+        </div>
+
+        <div class="form-grid-2 form-group">
+          <div>
+            <label class="form-label">MySQL Username</label>
+            <input type="text" id="dbUser" class="form-input" value="root" />
+          </div>
+          <div>
+            <label class="form-label">MySQL Password</label>
+            <div class="password-wrapper">
+              <input type="password" id="dbPassword" class="form-input" placeholder="Leave blank if none" />
+              <button type="button" class="password-toggle" onclick="togglePassword('dbPassword')">👁️</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <button type="button" id="btnTestMysql" class="btn btn-outline" style="width: 100%;" onclick="testMysqlConnection()">
+            🔌 Test MySQL Connection
+          </button>
+          <div id="mysqlStatusToast" class="status-toast"></div>
+        </div>
+
+        <div class="section-title">Pharmacy & Admin Credentials</div>
+
+        <div class="form-group">
+          <label class="form-label">Shop / Pharmacy Name</label>
+          <input type="text" id="shopName" class="form-input" value="Al-Hafiz Pharmacy" />
+        </div>
+
+        <div class="form-grid-2 form-group">
+          <div>
+            <label class="form-label">Admin Username</label>
+            <input type="text" id="adminUser" class="form-input" value="admin" readonly />
+          </div>
+          <div>
+            <label class="form-label">Admin Password</label>
+            <div class="password-wrapper">
+              <input type="password" id="adminPassword" class="form-input" value="admin123" />
+              <button type="button" class="password-toggle" onclick="togglePassword('adminPassword')">👁️</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top: 24px;">Database Initialization</div>
+        <div class="tab-pills">
+          <div id="pillNewDb" class="pill-btn active" onclick="selectDbInitMode('new')">
+            ✨ Create Fresh Database
+          </div>
+          <div id="pillRestoreDb" class="pill-btn" onclick="selectDbInitMode('restore')">
+            📂 Restore from SQL Backup
+          </div>
+        </div>
+
+        <div id="restoreSection" class="hidden" style="margin-bottom: 20px;">
+          <label class="form-label">Select SQL Backup File</label>
+          <div class="input-with-button">
+            <input type="text" id="restoreFilePath" class="form-input" placeholder="No file selected..." readonly />
+            <button type="button" class="btn btn-secondary" onclick="browseSqlBackup()">Browse...</button>
+          </div>
+        </div>
+
+        <button type="button" id="btnSaveServer" class="btn btn-primary btn-lg" onclick="saveAndLaunchServer()">
+          🚀 Save & Launch Pharmacy (Server Mode)
+        </button>
+      </div>
+
+      <!-- CLIENT PC CONFIGURATION PANEL -->
+      <div id="clientPanel" class="hidden">
+        <div class="alert alert-info">
+          <span>ℹ️</span>
+          <div>
+            <strong>MySQL is NOT required on this computer.</strong><br/>
+            This PC will connect directly to the Server PC over your local network.
+          </div>
+        </div>
+
+        <div class="section-title">Server Connection Settings</div>
+
+        <div class="form-group">
+          <label class="form-label">Server PC IP Address</label>
+          <input type="text" id="clientServerIp" class="form-input" placeholder="e.g. 192.168.1.100" />
+          <p style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">
+            Enter the IP displayed on your Server PC screen (e.g. 192.168.1.xxx)
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input type="text" id="clientPort" class="form-input" value="3000" />
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <button type="button" id="btnTestServer" class="btn btn-outline" style="width: 100%;" onclick="testServerConnection()">
+            🔌 Test Connection to Server PC
+          </button>
+          <div id="serverStatusToast" class="status-toast"></div>
+        </div>
+
+        <div class="section-title">Connection Checklist</div>
+        <ul class="checklist">
+          <li>
+            <span class="bullet">✓</span>
+            <span>Server PC is turned on and Al-Hafiz Pharmacy is open on it.</span>
+          </li>
+          <li>
+            <span class="bullet">✓</span>
+            <span>Both computers are connected to the same Wi-Fi router or network switch.</span>
+          </li>
+          <li>
+            <span class="bullet">✓</span>
+            <span>Windows Firewall on Server PC is allowing connections on port 3000.</span>
+          </li>
+        </ul>
+
+        <button type="button" id="btnSaveClient" class="btn btn-primary btn-lg" onclick="saveAndLaunchClient()">
+          🚀 Save & Connect to Server
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let currentMode = 'server';
+    let dbInitMode = 'new';
+    let selectedSqlFile = '';
+
+    function selectMode(mode) {
+      currentMode = mode;
+      const btnServer = document.getElementById('modeServer');
+      const btnClient = document.getElementById('modeClient');
+      const panelServer = document.getElementById('serverPanel');
+      const panelClient = document.getElementById('clientPanel');
+
+      if (mode === 'server') {
+        btnServer.classList.add('active');
+        btnClient.classList.remove('active');
+        panelServer.classList.remove('hidden');
+        panelClient.classList.add('hidden');
+      } else {
+        btnClient.classList.add('active');
+        btnServer.classList.remove('active');
+        panelClient.classList.remove('hidden');
+        panelServer.classList.add('hidden');
+      }
+    }
+
+    function selectDbInitMode(mode) {
+      dbInitMode = mode;
+      const pillNew = document.getElementById('pillNewDb');
+      const pillRestore = document.getElementById('pillRestoreDb');
+      const restoreSection = document.getElementById('restoreSection');
+
+      if (mode === 'new') {
+        pillNew.classList.add('active');
+        pillRestore.classList.remove('active');
+        restoreSection.classList.add('hidden');
+      } else {
+        pillRestore.classList.add('active');
+        pillNew.classList.remove('active');
+        restoreSection.classList.remove('hidden');
+      }
+    }
+
+    function togglePassword(id) {
+      const input = document.getElementById(id);
+      if (input.type === 'password') {
+        input.type = 'text';
+      } else {
+        input.type = 'password';
+      }
+    }
+
+    function showToast(elementId, type, message) {
+      const el = document.getElementById(elementId);
+      el.style.display = 'block';
+      if (type === 'success') {
+        el.style.background = 'var(--success-light)';
+        el.style.color = 'var(--success)';
+        el.style.border = '1px solid #bbf7d0';
+      } else if (type === 'error') {
+        el.style.background = 'var(--danger-light)';
+        el.style.color = 'var(--danger)';
+        el.style.border = '1px solid #fecaca';
+      } else {
+        el.style.background = 'var(--primary-light)';
+        el.style.color = 'var(--primary)';
+        el.style.border = '1px solid #bfdbfe';
+      }
+      el.innerHTML = message;
+    }
+
+    async function copyIpAddress() {
+      const ip = document.getElementById('localIpDisplay').textContent;
+      if (ip && ip !== 'Detecting IP...') {
+        try {
+          await navigator.clipboard.writeText(ip);
+          alert('Server IP copied to clipboard: ' + ip);
+        } catch {
+          alert('Server IP: ' + ip);
+        }
+      }
+    }
+
+    async function loadLocalIps() {
+      if (window.electronAPI && window.electronAPI.getLocalIps) {
+        try {
+          const ips = await window.electronAPI.getLocalIps();
+          const display = document.getElementById('localIpDisplay');
+          if (ips && ips.length > 0) {
+            display.textContent = ips[0];
+          } else {
+            display.textContent = '127.0.0.1';
+          }
+        } catch {
+          document.getElementById('localIpDisplay').textContent = '127.0.0.1';
+        }
+      } else {
+        document.getElementById('localIpDisplay').textContent = '127.0.0.1';
+      }
+    }
+
+    async function loadExistingConfig() {
+      if (window.electronAPI && window.electronAPI.getConfig) {
+        const config = await window.electronAPI.getConfig();
+        if (config) {
+          if (config.USE_MYSQL === 'false') {
+            selectMode('client');
+          } else {
+            selectMode('server');
+          }
+          // Server PC MySQL is always local
+          document.getElementById('dbHost').value = '127.0.0.1';
+          if (config.DB_PORT) document.getElementById('dbPort').value = config.DB_PORT;
+          if (config.DB_USER) document.getElementById('dbUser').value = config.DB_USER;
+          if (config.DB_PASSWORD) document.getElementById('dbPassword').value = config.DB_PASSWORD;
+          if (config.DB_NAME) document.getElementById('dbName').value = config.DB_NAME;
+          if (config.SERVER_IP && config.SERVER_IP !== '127.0.0.1') {
+            document.getElementById('clientServerIp').value = config.SERVER_IP;
+          }
+        }
+      }
+    }
+
+    async function browseSqlBackup() {
+      if (!window.electronAPI || !window.electronAPI.selectSqlFile) {
+        alert('File selector is only available inside the desktop application.');
+        return;
+      }
+      try {
+        const file = await window.electronAPI.selectSqlFile();
+        if (file) {
+          selectedSqlFile = file;
+          document.getElementById('restoreFilePath').value = file;
+        }
+      } catch (err) {
+        alert('Failed to select file: ' + err.message);
+      }
+    }
+
+    async function testMysqlConnection() {
+      const btn = document.getElementById('btnTestMysql');
+      const host = '127.0.0.1';
+      const port = document.getElementById('dbPort').value.trim() || '3306';
+      const user = document.getElementById('dbUser').value.trim() || 'root';
+      const password = document.getElementById('dbPassword').value;
+      const database = document.getElementById('dbName').value.trim() || 'pharmacy_db';
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-primary"></span> Testing MySQL connection...';
+
+      try {
+        if (!window.electronAPI || !window.electronAPI.testMysql) {
+          throw new Error('Electron API not available');
+        }
+
+        const res = await window.electronAPI.testMysql({ host, port, user, password, database });
+        if (res.success) {
+          showToast('mysqlStatusToast', 'success', '✅ ' + res.message);
+        } else {
+          showToast('mysqlStatusToast', 'error', '❌ MySQL Error: ' + res.error + '<br/><span style="font-size:11px;color:#666;">Ensure MySQL service is running on this computer.</span>');
+        }
+      } catch (err) {
+        showToast('mysqlStatusToast', 'error', '❌ Test failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔌 Test MySQL Connection';
+      }
+    }
+
+    async function testServerConnection() {
+      const btn = document.getElementById('btnTestServer');
+      const serverIp = document.getElementById('clientServerIp').value.trim();
+      const port = document.getElementById('clientPort').value.trim() || '3000';
+
+      if (!serverIp) {
+        showToast('serverStatusToast', 'error', 'Please enter the Server PC IP address.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-primary"></span> Testing connection to ' + serverIp + '...';
+
+      try {
+        if (!window.electronAPI || !window.electronAPI.testServer) {
+          throw new Error('Electron API not available');
+        }
+
+        const res = await window.electronAPI.testServer(serverIp, port);
+        if (res.success) {
+          showToast('serverStatusToast', 'success', '✅ ' + res.message);
+        } else {
+          showToast('serverStatusToast', 'error', '❌ ' + res.error + '<br/><span style="font-size:11px;color:#666;">Check that Server PC is on, pharmacy app is running, and firewall allows port ' + port + '.</span>');
+        }
+      } catch (err) {
+        showToast('serverStatusToast', 'error', '❌ Test failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔌 Test Connection to Server PC';
+      }
+    }
+
+    async function saveAndLaunchServer() {
+      const btn = document.getElementById('btnSaveServer');
+      const host = '127.0.0.1';
+      const port = document.getElementById('dbPort').value.trim() || '3306';
+      const user = document.getElementById('dbUser').value.trim() || 'root';
+      const password = document.getElementById('dbPassword').value;
+      const database = document.getElementById('dbName').value.trim() || 'pharmacy_db';
+      const shopName = document.getElementById('shopName').value.trim();
+      const adminPassword = document.getElementById('adminPassword').value;
+
+      if (!window.electronAPI) {
+        alert('Electron API is not available. Please restart the application.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner spinner-primary"></span> Verifying MySQL connection...';
+
+      try {
+        // Step 1: Pre-flight check - verify MySQL connection before launching server
+        const testRes = await window.electronAPI.testMysql({ host, port, user, password, database });
+        if (!testRes || !testRes.success) {
+          throw new Error('MySQL Connection Test Failed:\n' + (testRes?.error || 'Cannot connect to MySQL on 127.0.0.1:' + port) + '\n\nPlease check:\n1. Is MySQL Server running on this PC?\n2. Did you enter the correct MySQL root password?');
+        }
+
+        btn.innerHTML = '<span class="spinner"></span> Starting server & preparing database...';
+
+        const config = {
+          useMysql: true,
+          isServer: true,
+          dbHost: '127.0.0.1',
+          dbPort: port,
+          dbUser: user,
+          dbPassword: password,
+          dbName: database,
+          serverIp: '127.0.0.1',
+          shopName: shopName || 'Al-Hafiz Pharmacy',
+        };
+
+        const saveRes = await window.electronAPI.saveConfig(config);
+        if (!saveRes || !saveRes.success) {
+          throw new Error(saveRes?.error || 'Failed to save configuration');
+        }
+
+        if (dbInitMode === 'restore' && selectedSqlFile && window.electronAPI?.scheduleRestore) {
+          await window.electronAPI.scheduleRestore(selectedSqlFile);
+        }
+
+        const launchRes = await window.electronAPI.launchApp({
+          mode: 'server',
+          adminPassword,
+          restoreSqlPath: dbInitMode === 'restore' ? selectedSqlFile : null,
+        });
+
+        if (!launchRes || !launchRes.success) {
+          throw new Error(launchRes?.error || 'Failed to launch server. Please make sure MySQL is running on this PC.');
+        }
+      } catch (err) {
+        alert(err.message);
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Save & Launch Pharmacy (Server Mode)';
+      }
+    }
+
+    async function saveAndLaunchClient() {
+      const btn = document.getElementById('btnSaveClient');
+      const serverIp = document.getElementById('clientServerIp').value.trim();
+      const port = document.getElementById('clientPort').value.trim() || '3000';
+
+      if (!serverIp) {
+        alert('Please enter the Server PC IP address.');
+        return;
+      }
+
+      if (!window.electronAPI) {
+        alert('Electron API is not available. Please restart the application.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Connecting to Server PC...';
+
+      try {
+        const config = {
+          useMysql: false,
+          isServer: false,
+          serverIp: serverIp,
+          port: port,
+        };
+
+        const saveRes = await window.electronAPI.saveConfig(config);
+        if (!saveRes || !saveRes.success) {
+          throw new Error(saveRes?.error || 'Failed to save configuration');
+        }
+
+        const launchRes = await window.electronAPI.launchApp({
+          mode: 'client',
+        });
+
+        if (!launchRes || !launchRes.success) {
+          throw new Error(
+            launchRes?.error ||
+            'Could not reach Server PC at ' + serverIp + ':' + port + '\n\nChecklist:\n1. Is the Server PC turned on and Al-Hafiz Pharmacy open?\n2. Are both PCs on the same Wi-Fi / network?\n3. Is Windows Firewall on Server PC allowing port ' + port + '?'
+          );
+        }
+      } catch (err) {
+        alert('Connection Error:\n' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Save & Connect to Server';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadLocalIps();
+      loadExistingConfig();
+    });
+  </script>
+</body>
+</html>

@@ -2,8 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const { Server } = require('socket.io');
-require('dotenv').config();
+
+if (process.env.CONFIG_PATH && fs.existsSync(process.env.CONFIG_PATH)) {
+  require('dotenv').config({ path: process.env.CONFIG_PATH });
+} else {
+  require('dotenv').config();
+}
 
 const db = require('./db');
 const autoSetup = require('./db/autoSetup');

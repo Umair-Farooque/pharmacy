@@ -18,7 +18,12 @@ import SetupWizard from './components/Common/SetupWizard';
 function App() {
   const { user, loading } = useAuth();
   const [currentPage, setCurrentPage] = React.useState('dashboard');
-  const [showSetup, setShowSetup] = React.useState(!localStorage.getItem('setup_complete'));
+  const [showSetup, setShowSetup] = React.useState(() => {
+    if (window.electronAPI) {
+      return false;
+    }
+    return !localStorage.getItem('setup_complete');
+  });
 
   if (showSetup) {
     return <SetupWizard />;
