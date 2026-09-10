@@ -31,8 +31,16 @@ async function main() {
   const arch = process.arch === 'x64' ? 'win-x64' : 'win-arm64';
   const url = `https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${arch}.zip`;
   
-  console.log(`Downloading Node.js v${NODE_VERSION} for ${arch}...`);
   fs.mkdirSync(TOOLS_DIR, { recursive: true });
+  
+  const nodeExe = path.join(NODE_DIR, 'node.exe');
+  if (fs.existsSync(nodeExe)) {
+    console.log('Bundled Node.js already present at', NODE_DIR);
+    console.log('Files:', fs.readdirSync(NODE_DIR).join(', '));
+    return;
+  }
+  
+  console.log(`Downloading Node.js v${NODE_VERSION} for ${arch}...`);
   
   try {
     await download(url, ZIP_PATH);

@@ -58,19 +58,22 @@ export default function SetupWizard() {
   };
 
   const saveConfig = async () => {
-    if (config.adminPassword !== config.adminPasswordConfirm) {
-      setError('Admin passwords do not match');
-      return;
-    }
-    if (config.adminPassword.length < 6) {
-      setError('Admin password must be at least 6 characters');
-      return;
+    if (isServer) {
+      if (config.adminPassword !== config.adminPasswordConfirm) {
+        setError('Admin passwords do not match');
+        return;
+      }
+      if (config.adminPassword.length < 6) {
+        setError('Admin password must be at least 6 characters');
+        return;
+      }
     }
 
     setSaving(true);
     setError('');
     try {
       const electronConfig = {
+        useMysql: isServer,
         dbHost: config.dbHost,
         dbPort: config.dbPort,
         dbUser: config.dbUser,
@@ -96,6 +99,7 @@ export default function SetupWizard() {
       }
 
       localStorage.setItem('setup_complete', 'true');
+      localStorage.setItem('server_mode', isServer ? 'true' : 'false');
       localStorage.setItem('server_ip', isServer ? '127.0.0.1' : config.serverIp);
 
       if (window.electronAPI && window.electronAPI.restartApp) {

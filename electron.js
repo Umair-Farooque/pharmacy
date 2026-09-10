@@ -130,6 +130,11 @@ async function tryRestoreIfPending() {
   }
 }
 
+function getErrorPagePath() {
+  if (!app.isPackaged) return path.join(__dirname, 'public', 'error.html');
+  return path.join(process.resourcesPath, 'app', 'public', 'error.html');
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -154,8 +159,30 @@ function createWindow() {
   });
 }
 
+function showErrorPage() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1200,
+    minHeight: 700,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  mainWindow.loadFile(getErrorPagePath());
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
 app.whenReady().then(async () => {
   loadConfig();
+
+  const configPath = getConfigPath();
+  const hasConfig = fs.existsSync(configPath);
+  const setupComplete = hasConfig;
 
   if (isServerMode()) {
     console.log('[ELECTRON] Server mode - starting backend');
@@ -167,7 +194,19 @@ app.whenReady().then(async () => {
       createWindow();
     } catch (err) {
       console.error('[ELECTRON] Backend failed to start:', err.message);
+      showErrorPage();
+    }
+  } else if (!hasConfig) {
+    console.log('[ELECTRON] First run - defaulting to server mode for setup');
+    process.env.USE_MYSQL = 'true';
+    startServer();
+    try {
+      await waitForServer(`${getServerUrl()}/api/health`);
+      console.log('[ELECTRON] Backend ready');
       createWindow();
+    } catch (err) {
+      console.error('[ELECTRON] Backend failed to start:', err.message);
+      showErrorPage();
     }
   } else {
     console.log('[ELECTRON] Client mode - connecting to server');
@@ -216,7 +255,7 @@ ipcMain.handle('save-config', (event, config) => {
   try {
     const configPath = getConfigPath();
     const lines = [
-      'USE_MYSQL=true',
+      `USE_MYSQL=${config.useMysql ? 'true' : 'false'}`,
       `DB_HOST=${config.dbHost || '127.0.0.1'}`,
       `DB_PORT=${config.dbPort || '3306'}`,
       `DB_USER=${config.dbUser || 'root'}`,
