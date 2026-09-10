@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     node: process.versions.node,
     electron: process.versions.electron,
   },
+  setupDatabase: (config) => ipcRenderer.invoke('setup-database', config),
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
   getConfig: () => ipcRenderer.invoke('get-config'),
   getServerIp: () => ipcRenderer.invoke('get-server-ip'),

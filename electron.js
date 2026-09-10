@@ -72,11 +72,56 @@ function isServerMode() {
 
 function getServerUrl() {
   if (isServerMode()) {
-    return 'http://localhost:3000';
+    // IMPORTANT: use 127.0.0.1, NOT localhost. On Windows, `localhost` resolves
+    // to ::1 (IPv6) first, but Express binds 0.0.0.0 (IPv4 only), so health
+    // checks to http://localhost:3000 get ECONNREFUSED forever and were
+    // misreported as "Server connection timeout after 25000ms".
+    return 'http://127.0.0.1:3000';
   }
   const serverIp = process.env.SERVER_IP || '127.0.0.1';
   const port = process.env.PORT || '3000';
   return `http://${serverIp}:${port}`;
+}
+
+// Map MySQL/system error codes to clear, stage-specific messages.
+// Never include DB_PASSWORD or other secrets in the output.
+function describeError(err, stage) {
+  const code = (err && err.code) || null;
+  const errno = (err && err.errno) != null ? err.errno : null;
+  const sqlState = (err && err.sqlState) || null;
+  let message = (err && err.message) || String(err);
+  let hint;
+  switch (code) {
+    case 'ER_ACCESS_DENIED_ERROR':
+    case 1045:
+      hint = 'MySQL authentication failed: incorrect username or password.';
+      break;
+    case 'ER_BAD_DB_ERROR':
+    case 1049:
+      hint = `MySQL database not found: ${message}`;
+      break;
+    case 'ER_DBACCESS_DENIED_ERROR':
+      hint = 'MySQL user does not have permission to access this database.';
+      break;
+    case 'ER_DB_CREATE_EXISTS':
+      hint = 'Database already exists and could not be created.';
+      break;
+    case 'ECONNREFUSED':
+      hint = `MySQL connection refused at ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}. Is the MySQL service running?`;
+      break;
+    case 'ETIMEDOUT':
+      hint = `MySQL connection timed out at ${process.env.DB_HOST || '127.0.0.1'}:${process.env.DB_PORT || 3306}.`;
+      break;
+    case 'ENOTFOUND':
+      hint = 'MySQL host could not be resolved.';
+      break;
+    case 'EADDRINUSE':
+      hint = 'Express port 3000 is already used by another application.';
+      break;
+    default:
+      hint = message;
+  }
+  return { stage, code, errno, sqlState, message: hint, raw: message };
 }
 
 function stopServer() {
@@ -202,9 +247,11 @@ async function startServer() {
       const lines = serverOutput.split('\n').map(l => l.trim()).filter(l => l.length > 0);
       // Extract the most meaningful error line
       const errorLine = lines.find(l =>
+        l.includes('SETUP-FATAL') || l.includes('SERVER-FATAL') ||
         l.includes('EADDRINUSE') || l.includes('Access denied') ||
         l.includes('Failed to start') || l.includes('Auto-setup failed') ||
-        l.includes('ECONNREFUSED') || l.includes('ER_')
+        l.includes('ECONNREFUSED') || l.includes('ER_') ||
+        l.includes('Cannot find module')
       );
       const lastLines = lines.slice(-5).join(' | ');
       serverExitError = errorLine || lastLines || `Server process exited unexpectedly (code ${code})`;
@@ -480,12 +527,16 @@ ipcMain.handle('get-local-ips', () => {
 });
 
 ipcMain.handle('test-mysql', async (event, config) => {
+  // Check 1: MySQL SERVER connectivity (intentionally WITHOUT the target
+  // database, because on first run the database does not exist yet).
   try {
     const host = config.host || '127.0.0.1';
     const port = parseInt(config.port) || 3306;
     const user = config.user || 'root';
     const password = config.password || '';
+    const database = (config.database || '').trim();
 
+    console.log(`[SETUP] Testing MySQL server at ${host}:${port}`);
     const connection = await mysql.createConnection({
       host,
       port,
@@ -496,14 +547,96 @@ ipcMain.handle('test-mysql', async (event, config) => {
 
     try {
       await connection.query('SELECT 1');
+      console.log('[SETUP] MySQL server connection successful');
       await connection.end();
-      return { success: true, message: 'Connected to MySQL successfully!' };
+
+      // Check 2 (informational): does the selected database already exist
+      // and can this user access it? This must never fail the server test.
+      let databaseStatus = null;
+      if (database) {
+        try {
+          const exists = await mysql.createConnection({ host, port, user, password, connectTimeout: 4000 });
+          const [rows] = await exists.query(
+            'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
+            [database]
+          );
+          await exists.end();
+          if (rows.length > 0) {
+            const dbConn = await mysql.createConnection({ host, port, user, password, database, connectTimeout: 4000 });
+            await dbConn.query('SELECT 1');
+            await dbConn.end();
+            databaseStatus = 'accessible';
+          } else {
+            databaseStatus = 'missing';
+          }
+        } catch (dbErr) {
+          const d = describeError(dbErr, 'validate-database');
+          databaseStatus = 'inaccessible';
+          return {
+            success: true,
+            databaseStatus,
+            message: 'Connected to MySQL server successfully, but the selected database is not accessible: ' + d.message,
+            warning: d.message,
+          };
+        }
+      }
+
+      return {
+        success: true,
+        databaseStatus,
+        message:
+          databaseStatus === 'missing'
+            ? `Connected to MySQL server successfully! Database '${database}' does not exist yet - it will be created during setup.`
+            : 'Connected to MySQL successfully!',
+      };
     } catch (queryErr) {
       await connection.end().catch(() => {});
-      return { success: false, error: queryErr.message };
+      const d = describeError(queryErr, 'mysql-server-test');
+      console.error(`[SETUP] MySQL server test failed: code=${d.code} ${d.raw}`);
+      return { success: false, error: d.message, code: d.code, stage: d.stage };
     }
   } catch (err) {
-    return { success: false, error: err.message };
+    const d = describeError(err, 'mysql-server-test');
+    console.error(`[SETUP] MySQL server test failed: code=${d.code} ${d.raw}`);
+    return { success: false, error: d.message, code: d.code, stage: d.stage };
+  }
+});
+
+// BUG 4/BUG 5: Create the database and initialize the schema via Electron IPC,
+// BEFORE saving the production config and BEFORE starting the backend.
+// Reuses the existing autoSetup() helper (server connection without DB ->
+// CREATE DATABASE IF NOT EXISTS -> connection WITH DB -> idempotent schema).
+ipcMain.handle('setup-database', async (event, config) => {
+  try {
+    const host = config.dbHost || '127.0.0.1';
+    const port = parseInt(config.dbPort) || 3306;
+    const user = config.dbUser || 'root';
+    const password = config.dbPassword || '';
+    const dbName = (config.dbName || '').trim();
+
+    if (!/^[A-Za-z0-9_$]{1,64}$/.test(dbName)) {
+      return {
+        success: false,
+        stage: 'database-setup',
+        message: `Invalid database name '${dbName}'. Use letters, digits, underscore only.`,
+      };
+    }
+
+    console.log(`[SETUP] Creating/initializing database: ${dbName}`);
+    process.env.DB_HOST = host;
+    process.env.DB_PORT = String(port);
+    process.env.DB_USER = user;
+    process.env.DB_PASSWORD = password;
+    process.env.DB_NAME = dbName;
+
+    const autoSetup = require('./src/backend/db/autoSetup');
+    await autoSetup();
+    console.log(`[SETUP] Database '${dbName}' created and schema initialized`);
+    return { success: true, message: `Database '${dbName}' created and schema initialized.` };
+  } catch (err) {
+    const d = describeError(err, 'database-setup');
+    console.error(`[SETUP] Database setup failed: stage=${d.stage} code=${d.code} errno=${d.errno} sqlState=${d.sqlState} ${d.raw}`);
+    return { success: false, stage: d.stage, code: d.code, errno: d.errno, sqlState: d.sqlState, error: d.message };
   }
 });
 

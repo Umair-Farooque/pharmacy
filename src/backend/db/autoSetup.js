@@ -2,8 +2,17 @@ const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
 async function autoSetup() {
-  const dbName = process.env.DB_NAME || 'pharmacy_db';
-  
+  const dbName = (process.env.DB_NAME || 'pharmacy_db').trim();
+
+  // Safety: database identifier must be a plain identifier - it is interpolated
+  // into CREATE DATABASE, which cannot use prepared-statement placeholders.
+  if (!/^[A-Za-z0-9_$]{1,64}$/.test(dbName)) {
+    const err = new Error(`Invalid database name '${dbName}'. Use letters, digits and underscore only (max 64 chars).`);
+    err.code = 'ER_INVALID_DB_NAME';
+    throw err;
+  }
+
+  console.log('[SETUP] Testing MySQL server connection (no database selected)');
   const connectionWithoutDb = await mysql.createConnection({
     host: process.env.DB_HOST || '127.0.0.1',
     port: parseInt(process.env.DB_PORT) || 3306,
@@ -13,12 +22,14 @@ async function autoSetup() {
   });
 
   try {
+    console.log(`[SETUP] Creating database: ${dbName}`);
     await connectionWithoutDb.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
     console.log(`[SETUP] Database '${dbName}' ensured`);
   } finally {
     await connectionWithoutDb.end();
   }
 
+  console.log(`[SETUP] Connecting to database: ${dbName}`);
   const connection = await mysql.createConnection({
     host: process.env.DB_HOST || '127.0.0.1',
     port: parseInt(process.env.DB_PORT) || 3306,
@@ -37,6 +48,9 @@ async function autoSetup() {
       console.warn(`[SETUP] ${msg} - ${err.message}`);
     }
   };
+
+  console.log('[SETUP] Database connection successful');
+  console.log('[SETUP] Initializing schema');
 
   try {
     await run(`
@@ -451,6 +465,7 @@ async function autoSetup() {
       await connection.query("INSERT INTO sale_counter (id, counter) VALUES (1, 0)");
     }
 
+    console.log('[SETUP] Schema initialization successful');
     console.log('[SETUP] Database setup complete');
   } finally {
     await connection.end();

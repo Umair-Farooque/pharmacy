@@ -835,10 +835,32 @@
       btn.innerHTML = '<span class="spinner spinner-primary"></span> Verifying MySQL connection...';
 
       try {
-        // Step 1: Pre-flight check - verify MySQL connection before launching server
+        // Step 1: Pre-flight check - verify MySQL SERVER before launching server
         const testRes = await window.electronAPI.testMysql({ host, port, user, password, database });
         if (!testRes || !testRes.success) {
           throw new Error('MySQL Connection Test Failed:\n' + (testRes?.error || 'Cannot connect to MySQL on 127.0.0.1:' + port) + '\n\nPlease check:\n1. Is MySQL Server running on this PC?\n2. Did you enter the correct MySQL root password?');
+        }
+        if (testRes.databaseStatus === 'inaccessible') {
+          throw new Error('MySQL server is reachable, but the database "' + database + '" is not accessible with these credentials.\n\n' + (testRes.warning || ''));
+        }
+
+        btn.innerHTML = '<span class="spinner"></span> Creating database & initializing schema...';
+
+        // Step 2: Create the database and initialize the schema BEFORE saving
+        // the production config (a failed setup must not leave a half-configured
+        // state) and BEFORE starting the Express backend.
+        const setupRes = await window.electronAPI.setupDatabase({
+          dbHost: host,
+          dbPort: port,
+          dbUser: user,
+          dbPassword: password,
+          dbName: database,
+        });
+        if (!setupResCheck(setupRes)) {
+          const stageHint = setupRes && setupRes.stage === 'database-setup'
+            ? '\n\nStage: database creation / schema initialization.'
+            : '';
+          throw new Error((setupRes && setupRes.error || 'Failed to create database') + stageHint);
         }
 
         btn.innerHTML = '<span class="spinner"></span> Starting server & preparing database...';
@@ -855,6 +877,7 @@
           shopName: shopName || 'Al-Hafiz Pharmacy',
         };
 
+        // Step 3: only now persist production configuration
         const saveRes = await window.electronAPI.saveConfig(config);
         if (!saveRes || !saveRes.success) {
           throw new Error(saveRes?.error || 'Failed to save configuration');
@@ -864,6 +887,7 @@
           await window.electronAPI.scheduleRestore(selectedSqlFile);
         }
 
+        // Step 4: start local Express backend and wait for /api/health
         const launchRes = await window.electronAPI.launchApp({
           mode: 'server',
           adminPassword,
@@ -878,6 +902,10 @@
         btn.disabled = false;
         btn.innerHTML = '🚀 Save & Launch Pharmacy (Server Mode)';
       }
+    }
+
+    function setupResCheck(res) {
+      return !!(res && res.success);
     }
 
     async function saveAndLaunchClient() {

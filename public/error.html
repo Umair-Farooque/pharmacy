@@ -229,15 +229,54 @@
         <li><span class="bullet">•</span> <span><strong>IP Address:</strong> Has the Server PC's IP address changed? Click "Open Setup" to update it.</span></li>
       `;
     } else {
-      errorTitle.textContent = 'Server PC - Database Error';
-      errorSubtitle.textContent = 'The local pharmacy server could not connect to MySQL.';
-      checklistTitle.textContent = 'Please check the following:';
-      checklistItems.innerHTML = `
-        <li><span class="bullet">•</span> <span><strong>MySQL Service:</strong> Ensure MySQL is running in Windows Services or XAMPP.</span></li>
-        <li><span class="bullet">•</span> <span><strong>Credentials:</strong> Verify the MySQL root password matches your setup.</span></li>
-        <li><span class="bullet">•</span> <span><strong>Port Conflict:</strong> Port 3000 or 3306 might be used by another app.</span></li>
-        <li><span class="bullet">•</span> <span>Click <strong>"Open Setup"</strong> below to test or fix your database password.</span></li>
-      `;
+      const e = rawError.toLowerCase();
+      const isAuth = e.includes('authentication failed') || e.includes('access denied');
+      const isConnRefused = e.includes('connection refused') || e.includes('econnrefused');
+      const isTimedOut = e.includes('timed out') || e.includes('timeout');
+      const isExpressPort = e.includes('port 3000') || e.includes('eaddrinuse') || e.includes('already in use');
+      const isDb = e.includes('database') || isAuth || isConnRefused || isTimedOut;
+
+      if (isAuth) {
+        errorTitle.textContent = 'Server PC - MySQL Authentication Error';
+        errorSubtitle.textContent = 'MySQL rejected the username/password entered during setup.';
+        checklistTitle.textContent = 'Please check the following:';
+        checklistItems.innerHTML = `
+          <li><span class="bullet">•</span> <span><strong>Credentials:</strong> The MySQL root password entered in Setup is incorrect.</span></li>
+          <li><span class="bullet">•</span> <span>Click <strong>"Open Setup"</strong> and re-enter the correct MySQL password.</span></li>
+        `;
+      } else if (isConnRefused || isTimedOut) {
+        errorTitle.textContent = 'Server PC - MySQL Unavailable';
+        errorSubtitle.textContent = 'The application could not reach MySQL at 127.0.0.1:3306.';
+        checklistTitle.textContent = 'Please check the following:';
+        checklistItems.innerHTML = `
+          <li><span class="bullet">•</span> <span><strong>MySQL Service:</strong> Ensure the MySQL80 Windows service is Running.</span></li>
+          <li><span class="bullet">•</span> <span>Click <strong>"Open Setup"</strong> and use "Test MySQL Connection" to verify.</span></li>
+        `;
+      } else if (isExpressPort) {
+        errorTitle.textContent = 'Server PC - Backend Port Error';
+        errorSubtitle.textContent = 'The pharmacy backend could not start on port 3000.';
+        checklistTitle.textContent = 'Please check the following:';
+        checklistItems.innerHTML = `
+          <li><span class="bullet">•</span> <span><strong>Port 3000:</strong> Another application is using port 3000. Close it and retry.</span></li>
+        `;
+      } else if (!isDb && rawError) {
+        errorTitle.textContent = 'Server PC - Startup Error';
+        errorSubtitle.textContent = 'The local pharmacy server could not start.';
+        checklistTitle.textContent = 'Please check the following:';
+        checklistItems.innerHTML = `
+          <li><span class="bullet">•</span> <span>Review the error details below, then click <strong>"Retry"</strong>.</span></li>
+          <li><span class="bullet">•</span> <span>If the problem persists, click <strong>"Open Setup"</strong> and re-run the setup wizard.</span></li>
+        `;
+      } else {
+        errorTitle.textContent = 'Server PC - Database Error';
+        errorSubtitle.textContent = 'The local pharmacy server could not connect to MySQL.';
+        checklistTitle.textContent = 'Please check the following:';
+        checklistItems.innerHTML = `
+          <li><span class="bullet">•</span> <span><strong>MySQL Service:</strong> Ensure MySQL is running in Windows Services or XAMPP.</span></li>
+          <li><span class="bullet">•</span> <span><strong>Credentials:</strong> Verify the MySQL root password matches your setup.</span></li>
+          <li><span class="bullet">•</span> <span>Click <strong>"Open Setup"</strong> below to test or fix your database settings.</span></li>
+        `;
+      }
     }
 
     async function handleRetry() {

@@ -1,0 +1,16 @@
+
+> pharmacy-management@1.0.0 build:win
+> node scripts/download-node.js && electron-builder --win
+
+Bundled Node.js already present at D:\pharmacy\tools\node
+Files: CHANGELOG.md, corepack, corepack.cmd, install_tools.bat, LICENSE, node.exe, nodevars.bat, node_modules, npm, npm.cmd, npx, npx.cmd, README.md
+  • electron-builder  version=24.13.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • author is missed in the package.json  appPackageFile=D:\pharmacy\package.json
+  • skipped dependencies rebuild  reason=npmRebuild is set to false
+  • packaging       platform=win32 arch=x64 electron=26.6.10 appOutDir=dist\win-unpacked
+  • asar usage is disabled — this is strongly not recommended  solution=enable asar and use asarUnpack to unpack files that must be externally available
+  • asar usage is disabled — this is strongly not recommended  solution=enable asar and use asarUnpack to unpack files that must be externally available
+  • default Electron icon is used  reason=application icon is not set
+  • building        target=nsis file=dist\Al-Hafiz Pharmacy Setup 1.0.0.exe archs=x64 oneClick=false perMachine=false
+  • building block map  blockMapFile=dist\Al-Hafiz Pharmacy Setup 1.0.0.exe.blockmap

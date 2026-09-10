@@ -20,15 +20,21 @@ async function startServer() {
   try {
     await autoSetup();
   } catch (err) {
-    console.error('[SETUP] Auto-setup failed:', err.message);
+    // Machine-readable fatal marker so Electron can surface the REAL failure
+    // instead of a generic health-check timeout.
+    console.error(`[SETUP-FATAL] stage=mysql-setup code=${err.code || 'UNKNOWN'} errno=${err.errno || ''} sqlState=${err.sqlState || ''} message=${err.message}`);
     console.error('[SETUP] MySQL host:', process.env.DB_HOST || '127.0.0.1');
     console.error('[SETUP] MySQL port:', process.env.DB_PORT || 3306);
     console.error('[SETUP] MySQL user:', process.env.DB_USER || 'root');
-    console.error('[SETUP] Please check your MySQL connection settings in config.env');
     process.exit(1);
   }
 
-  await db.init();
+  try {
+    await db.init();
+  } catch (err) {
+    console.error(`[SETUP-FATAL] stage=schema-init code=${err.code || 'UNKNOWN'} message=${err.message}`);
+    process.exit(1);
+  }
 
   const app = express();
   const server = http.createServer(app);
@@ -93,7 +99,15 @@ async function startServer() {
       console.log(`[SERVER] API: http://localhost:${PORT}/api`);
       resolve(server);
     });
-    server.on('error', reject);
+    server.on('error', (err) => {
+      // Distinguish Express port failures from MySQL failures (BUG 6).
+      if (err.code === 'EADDRINUSE') {
+        console.error(`[SERVER-FATAL] stage=express-port code=EADDRINUSE message=Express port ${PORT} is already in use by another application.`);
+      } else {
+        console.error(`[SERVER-FATAL] stage=express-port code=${err.code || 'UNKNOWN'} message=${err.message}`);
+      }
+      reject(err);
+    });
   });
 }
 
