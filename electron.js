@@ -1085,12 +1085,10 @@ body {
     width: ${PRINTABLE_WIDTH_MM}mm;
     box-sizing: border-box;
     margin: 0;
-    /* Keep content inside the printer printable area: left 3mm, right 5mm.
-       The #receipt is the 64mm printable width; its 5mm right padding plus the
-       left 3mm padding keep all content safely within the 80mm page's printable
-       area so prices, totals and footer text never clip. Vertical padding
-       (top/bottom 1.5mm) is unchanged. */
-    padding: 1.5mm 5mm 1.5mm 3mm;
+    /* Keep content inside the printer printable area: left 3mm, right 8mm.
+       The right-side padding is increased to move the price/total column
+       inward; the left 3mm layout is unchanged. */
+    padding: 1.5mm 8mm 1.5mm 3mm;
 }
 
 .center {
