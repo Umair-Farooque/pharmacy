@@ -1085,18 +1085,16 @@ body {
     width: ${PRINTABLE_WIDTH_MM}mm;
     box-sizing: border-box;
     margin: 0;
-    /* The 64mm printable width is the COMPLETE safe content width - nothing is
-       added on top of it. Horizontal padding is 0 so the content box stays
-       exactly 64mm; only vertical padding (top/bottom 1.5mm) is retained. */
-    padding: 1.5mm 0 1.5mm 0;
+    /* Keep content inside the printer printable area: left 3mm, right 5mm.
+       The #receipt is the 64mm printable width; its 5mm right padding plus the
+       left 3mm padding keep all content safely within the 80mm page's printable
+       area so prices, totals and footer text never clip. Vertical padding
+       (top/bottom 1.5mm) is unchanged. */
+    padding: 1.5mm 5mm 1.5mm 3mm;
 }
 
 .center {
     text-align: center;
-    /* Prevent long centered footer/header tokens (e.g. the PRINT BUILD
-       diagnostic line) from overflowing the 64mm width - allow wrapping. */
-    overflow-wrap: anywhere;
-    word-break: break-word;
 }
 
 .left {
