@@ -1036,6 +1036,10 @@ async function printHtml({ html, printerName, paperWidth }) {
     // viewport can NEVER become the thermal paper height - the receipt's own
     // laid-out bounding box does.
     const PAPER_WIDTH_MM = 80;
+    // Printable receipt content width - the #receipt container. It must fit
+    // safely inside the 80mm physical page and the printer's 3mm left / 5mm
+    // right margins so prices, totals and footer text never clip on the right.
+    const PRINTABLE_WIDTH_MM = 64;
     const renderWidth = Math.round(PAPER_WIDTH_MM * 96 / 25.4);
     win = new BrowserWindow({
       show: false,
@@ -1078,11 +1082,14 @@ body {
 }
 
 #receipt {
-    width: ${PAPER_WIDTH_MM}mm;
+    width: ${PRINTABLE_WIDTH_MM}mm;
     box-sizing: border-box;
     margin: 0;
     /* Keep content inside the printer printable area: left 3mm, right 5mm.
-       Vertical padding (top/bottom 1.5mm) is unchanged. */
+       The #receipt is the 64mm printable width; its 5mm right padding plus the
+       left 3mm padding keep all content safely within the 80mm page's printable
+       area so prices, totals and footer text never clip. Vertical padding
+       (top/bottom 1.5mm) is unchanged. */
     padding: 1.5mm 5mm 1.5mm 3mm;
 }
 
