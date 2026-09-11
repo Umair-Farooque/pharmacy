@@ -1,3 +1,8 @@
+
+// =====================================================================
+// BUILD IDENTIFIER (temporary diagnostics - do not remove until the DTP-220
+// packaged-vs-dev mystery is resolved).
+// =====================================================================
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -7,13 +12,92 @@ const { spawn } = require('child_process');
 const mysql = require('mysql2/promise');
 
 // =====================================================================
-// BUILD IDENTIFIER (temporary diagnostics - do not remove until the DTP-220
-// packaged-vs-dev mystery is resolved).
+// BUILD / PRINT DIAGNOSTICS
 // =====================================================================
-console.log('[BUILD-ID] Pharmacy Print Build: 2026-09-10-PACKAGED-DIAGNOSTIC');
+
+const BUILD_ID = '2026-09-10-PACKAGED-DIAGNOSTIC';
+
+console.log('================================================');
+console.log('[BUILD-ID] Pharmacy Print Build:', BUILD_ID);
 console.log('[BUILD-ID] __dirname:', __dirname);
 console.log('[BUILD-ID] isPackaged:', app.isPackaged);
 console.log('[BUILD-ID] resourcesPath:', process.resourcesPath);
+console.log('================================================');
+
+// ---------------------------------------------------------------------
+// Persistent diagnostic log
+// Main-process console.log() may NOT appear in renderer DevTools.
+// Therefore we also write diagnostics to a file.
+// ---------------------------------------------------------------------
+
+function debugLog(message, data = null) {
+  try {
+    const timestamp = new Date().toISOString();
+
+    let line = `[${timestamp}] ${message}`;
+
+    if (data !== null) {
+      if (typeof data === 'string') {
+        line += ` ${data}`;
+      } else {
+        line += ` ${JSON.stringify(data, null, 2)}`;
+      }
+    }
+
+    console.log(line);
+
+    // app.getPath() is safe after Electron has initialized.
+    // During very early startup, fall back to a temporary location.
+    let logPath;
+
+    try {
+      logPath = path.join(
+        app.getPath('userData'),
+        'pharmacy-print-debug.log'
+      );
+    } catch {
+      logPath = path.join(
+        os.tmpdir(),
+        'pharmacy-print-debug.log'
+      );
+    }
+
+    fs.appendFileSync(logPath, line + '\n', 'utf8');
+
+  } catch (error) {
+    console.error('[DEBUG-LOG-ERROR]', error);
+  }
+}
+
+// Initial startup diagnostics
+debugLog('========== ELECTRON MAIN PROCESS STARTED ==========');
+debugLog('BUILD_ID', BUILD_ID);
+debugLog('Node version', process.version);
+debugLog('Electron version', process.versions.electron);
+debugLog('Chrome version', process.versions.chrome);
+debugLog('Platform', process.platform);
+debugLog('Architecture', process.arch);
+debugLog('isPackaged', app.isPackaged);
+debugLog('__dirname', __dirname);
+debugLog('process.resourcesPath', process.resourcesPath);
+
+// This will tell us exactly where the log file is.
+try {
+  debugLog(
+    'userData path',
+    app.getPath('userData')
+  );
+
+  debugLog(
+    'print debug log path',
+    path.join(
+      app.getPath('userData'),
+      'pharmacy-print-debug.log'
+    )
+  );
+} catch (error) {
+  console.error('[DEBUG] Could not get userData path:', error);
+}
 
 let mainWindow;
 let serverProcess = null;
@@ -457,6 +541,11 @@ function createApplicationMenu() {
 }
 
 app.whenReady().then(async () => {
+  debugLog('========== APP READY ==========');
+  debugLog('isPackaged', app.isPackaged);
+  debugLog('__dirname', __dirname);
+  debugLog('resourcesPath', process.resourcesPath);
+  debugLog('userData', app.getPath('userData'));
   createApplicationMenu();
   loadConfig();
 
@@ -1121,6 +1210,14 @@ body {
       const timer = setTimeout(() => {
         finish({ success: false, failureReason: 'The printer did not respond in time (print timed out)' });
       }, PRINT_JOB_TIMEOUT_MS);
+      debugLog('================================================');
+      debugLog('[PRINT] PRINT FUNCTION REACHED');
+      debugLog('[PRINT] isPackaged', app.isPackaged);
+      debugLog('[PRINT] printerName', printerName);
+      debugLog('[PRINT] printOptions', printOptions);
+      debugLog('[PRINT] BrowserWindow exists', !!win);
+      debugLog('[PRINT] webContents exists', !!win?.webContents);
+      debugLog('================================================');
       try {
         win.webContents.print(
           printOptions,
@@ -1237,6 +1334,10 @@ function startPrintService() {
 }
 
 ipcMain.handle('print-bill', async (event, payload = {}) => {
+  debugLog('****************************************');
+  debugLog('[PRINT] IPC PRINT REQUEST RECEIVED');
+  debugLog('[PRINT] arguments', arguments);
+  debugLog('****************************************');
   console.log(`[PRINT] print-bill IPC received: printerName=${payload?.printerName || '(none)'}`);
   let { html, printerName, paperWidth } = payload;
   // Printers prefixed with "[Server] " belong to the Server PC.
