@@ -118,6 +118,25 @@ export default function Billing({ onNavigate }) {
     return s.replace(/\.00$/, '');
   };
 
+  // SINGLE SOURCE OF TRUTH for discount mathematics. The live UI preview, the
+  // sale payload and the backend authority all use the exact same rules:
+  //   - FIXED:     discount_amount = entered value
+  //   - PERCENTAGE: discount_amount = subtotal * (pct / 100)
+  // Monetary values are rounded to 2 decimals, discount_amount is clamped to
+  // [0, subtotal] and final_amount is never below 0.
+  const computeDiscount = (subtotal, discountType, rawValue) => {
+    const st = Number(subtotal) || 0;
+    const val = Number(rawValue) || 0;
+    if (discountType === 'PERCENTAGE' && val > 0) {
+      const pct = Math.min(val, 100);
+      return Math.min(st, Math.round(st * pct / 100 * 100) / 100);
+    }
+    if (discountType === 'FIXED' && val > 0) {
+      return Math.min(st, Math.round(val * 100) / 100);
+    }
+    return 0;
+  };
+
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const d = new Date(dateStr);
@@ -157,7 +176,7 @@ export default function Billing({ onNavigate }) {
           <div class="center">
             <h3 class="shop-name">${settings.shop_name || 'Medical Store'}</h3>
             <p class="info">${settings.shop_address || ''}</p>
-            <p class="info">${settings.shop_phone || ''}${settings.shop_phone2 ? ' | ' + settings.shop_phone2 : ''}</p>
+            <p class="info shop-phone">${settings.shop_phone || ''}${settings.shop_phone2 ? ' | ' + settings.shop_phone2 : ''}</p>
           </div>
           <div class="line"></div>
           <p class="info">Bill #: ${saleData.bill_number}<br/>
@@ -175,7 +194,7 @@ export default function Billing({ onNavigate }) {
           }).join('')}
           <div class="line"></div>
           <div class="row info"><span class="item-name">Subtotal:</span><span class="item-qty"></span><span class="item-price">${fmt(saleData.subtotal || 0)}</span></div>
-          ${saleData.discount_amount > 0 ? `<div class="row info"><span class="item-name">Discount:</span><span class="item-qty"></span><span class="item-price">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
+          ${saleData.discount_amount > 0 ? `<div class="row info"><span class="item-name">Discount${saleData.discount_type === 'PERCENTAGE' ? ` (${fmt(saleData.discount_value)}%)` : ''}:</span><span class="item-qty"></span><span class="item-price">-${fmt(saleData.discount_amount || 0)}</span></div>` : ''}
           <div class="row total"><span class="item-name">TOTAL:</span><span class="item-qty"></span><span class="item-price">Rs. ${fmt(saleData.final_amount || 0)}</span></div>
           <div class="line"></div>
           <div class="left">
@@ -184,7 +203,7 @@ export default function Billing({ onNavigate }) {
             <p class="info">Thank you! Visit Again</p>
           </div>
           <div class="line"></div>
-          <div class="center"><p class="info">BunnySystems &nbsp;&nbsp; 03084624629</p></div>
+          <div class="left"><p class="footer-brand">BunnySystems&nbsp;&nbsp;03084624629</p></div>
           <div class="line"></div>
     `;
 
@@ -420,11 +439,8 @@ export default function Billing({ onNavigate }) {
   };
 
   const subtotal = cart.reduce((sum, item) => sum + (item.quantity * parseFloat(item.selling_rate_per_unit || 0)) + (parseFloat(item.service_charge || 0)), 0);
-  let discountAmount = 0;
-  if (discountType === 'FIXED' && discountValue > 0) {
-    discountAmount = parseFloat(discountValue);
-  }
-  const finalAmount = Math.max(0, subtotal - discountAmount);
+  const discountAmount = computeDiscount(subtotal, discountType, discountValue);
+  const finalAmount = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
 
   const clearCart = () => {
     setCart([]);
@@ -1285,13 +1301,14 @@ export default function Billing({ onNavigate }) {
                   <select value={discountType} onChange={e => setDiscountType(e.target.value)} className="flex-1 px-2 py-1.5 border rounded text-sm">
                     <option value="">None</option>
                     <option value="FIXED">Rs.</option>
+                    <option value="PERCENTAGE">%</option>
                   </select>
                   {discountType && (
-                    <input type="number" step="0.5" min="0" value={discountValue} onChange={e => setDiscountValue(e.target.value)} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="0" />
+                    <input type="number" step="0.5" min="0" max={discountType === 'PERCENTAGE' ? 100 : undefined} value={discountValue} onChange={e => setDiscountValue(e.target.value)} className="w-20 px-2 py-1.5 border rounded text-sm" placeholder="0" />
                   )}
                 </div>
                 {discountAmount > 0 && (
-                  <p className="text-xs text-red-600 mt-1">- Rs. {discountAmount.toFixed(2)}</p>
+                  <p className="text-xs text-red-600 mt-1">{discountType === 'PERCENTAGE' ? `${discountValue || 0}%` : 'Rs.'} discount: - Rs. {discountAmount.toFixed(2)}</p>
                 )}
               </div>
 

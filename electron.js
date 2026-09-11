@@ -1099,6 +1099,24 @@ body {
     text-align: left;
 }
 
+.shop-phone {
+    /* Shop contact phone number: render slightly smaller than the normal
+       receipt text so it reads as a subtitle, while staying readable and
+       within the printable area. */
+    font-size: 12px;
+}
+
+.footer-brand {
+    /* Footer branding: keep "BunnySystems 03084624629" on one centered line.
+       Slightly smaller than the normal receipt text so the whole line fits
+       within the printable area without wrapping or clipping. */
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-align: center;
+    margin: 0;
+}
+
 .line {
     border-top: 1px solid #000;
     margin: 6px 0;
@@ -1122,6 +1140,41 @@ body {
 .row > span:nth-child(3) {
     white-space: nowrap;
     text-align: right;
+}
+
+.row > span:nth-child(3) {
+    /* Add a clear horizontal gap BEFORE the per-line total so the qty/rate
+       ("1 x 5") and the line total ("5") are visually separated and can never
+       be misread as a single number ("1 x 55"). The medicine-name column is
+       untouched and the total stays inside the printable area. */
+    margin-left: 2mm;
+}
+
+/* Summary rows (Subtotal / Discount / TOTAL) have an empty quantity cell, so
+   render them as a normal inline row - the value sits immediately beside its
+   label instead of being pushed to the far right of the 3-column .row grid.
+   Medicine rows (with a real "Q x rate" in the middle cell) are unaffected. */
+.row:has(> .item-qty:empty) {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: nowrap;
+    column-gap: 0;
+}
+
+.row:has(> .item-qty:empty) > span:first-child {
+    flex: 0 0 auto;
+}
+
+.row:has(> .item-qty:empty) > span:nth-child(2) {
+    display: none;
+}
+
+.row:has(> .item-qty:empty) > span:nth-child(3) {
+    flex: 0 0 auto;
+    margin-left: 1ch;
 }
 </style>
 

@@ -155,23 +155,23 @@ async function createSale(req, res) {
       }
     }
 
+    // Single source of truth for discount mathematics. This mirrors the same
+    // rule used by the frontend live preview (Billing.jsx computeDiscount):
+    //   - FIXED:      discount_amount = entered value
+    //   - PERCENTAGE: discount_amount = subtotal * (pct / 100)
+    // Values are rounded to 2 decimals, discount_amount is clamped to the
+    // subtotal, and final_amount is never allowed below 0.
+    const st = parseFloat(subtotal) || 0;
     let discountAmount = 0;
     if (discount_type === 'PERCENTAGE' && discount_value > 0) {
-      discountAmount = subtotal * (discount_value / 100);
-      if (discountAmount > subtotal) {
-        await conn.rollback();
-        return res.status(400).json({ error: 'Discount amount cannot exceed subtotal' });
-      }
+      const pct = Math.min(parseFloat(discount_value) || 0, 100);
+      discountAmount = Math.min(st, Math.round(st * pct / 100 * 100) / 100);
     } else if (discount_type === 'FIXED' && discount_value > 0) {
-      discountAmount = parseFloat(discount_value);
-      if (discountAmount > subtotal) {
-        await conn.rollback();
-        return res.status(400).json({ error: 'Discount amount cannot exceed subtotal' });
-      }
+      discountAmount = Math.min(st, Math.round((parseFloat(discount_value) || 0) * 100) / 100);
     }
 
     const taxAmt = tax_amount || 0;
-    const finalAmount = Math.max(0, subtotal - discountAmount + taxAmt);
+    const finalAmount = Math.max(0, Math.round((st - discountAmount + taxAmt) * 100) / 100);
 
     const saleResult = await conn.run(
       `INSERT INTO sales (bill_number, subtotal, discount_type, discount_value, discount_amount, tax_amount, final_amount, payment_method, customer_id, cashier_id)
