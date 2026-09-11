@@ -1029,10 +1029,14 @@ async function printHtml({ html, printerName, paperWidth }) {
 
   try {
     // Render at the real receipt width in a HIDDEN window (no pop-up, no dialog).
-    // The DTP-220 thermal printer is confirmed as 58mm wide, which is ~219 CSS px
-    // at 96dpi. The initial height stays small so the viewport can NEVER become
-    // the thermal paper height - the receipt's own laid-out bounding box does.
-    const renderWidth = 219;
+    // The FIT FP-1000 thermal printer uses 80mm paper, which is ~302 CSS px at
+    // 96dpi. PAPER_WIDTH_MM is the single source of truth for the paper geometry:
+    // the render width, the @page/html/body/#receipt CSS widths, and the Electron
+    // pageSize.width all derive from it. The initial height stays small so the
+    // viewport can NEVER become the thermal paper height - the receipt's own
+    // laid-out bounding box does.
+    const PAPER_WIDTH_MM = 80;
+    const renderWidth = Math.round(PAPER_WIDTH_MM * 96 / 25.4);
     win = new BrowserWindow({
       show: false,
       width: renderWidth,
@@ -1043,10 +1047,10 @@ async function printHtml({ html, printerName, paperWidth }) {
 
     // electron.js is the SINGLE OWNER of the thermal print document. Whatever
     // Billing.jsx or the Settings test-print supplies is treated as bare receipt
-    // BODY content and is ALWAYS wrapped here with the canonical 58mm portrait
+    // BODY content and is ALWAYS wrapped here with the canonical 80mm portrait
     // page (native-size, zero-margin, full-width). We never accept a complete
     // <html> document from the frontend - doing so previously bypassed this
-    // wrapper and left the 58mm geometry unapplied.
+    // wrapper and left the 80mm geometry unapplied.
     const content = `<!DOCTYPE html>
 <html>
 <head>
@@ -1054,13 +1058,13 @@ async function printHtml({ html, printerName, paperWidth }) {
 
 <style>
 @page {
-    size: 58mm auto;
+    size: ${PAPER_WIDTH_MM}mm auto;
     margin: 0;
 }
 
 html,
 body {
-    width: 58mm;
+    width: ${PAPER_WIDTH_MM}mm;
     margin: 0;
     padding: 0;
 }
@@ -1074,10 +1078,12 @@ body {
 }
 
 #receipt {
-    width: 58mm;
+    width: ${PAPER_WIDTH_MM}mm;
     box-sizing: border-box;
     margin: 0;
-    padding: 1.5mm 2mm;
+    /* Keep content inside the printer printable area: left 3mm, right 5mm.
+       Vertical padding (top/bottom 1.5mm) is unchanged. */
+    padding: 1.5mm 5mm 1.5mm 3mm;
 }
 
 .center {
@@ -1133,10 +1139,27 @@ body {
     // Measure the actual #receipt element (never the window viewport) and derive
     // the physical page height from the real receipt content.
     const metrics = await measureReceipt(win.webContents);
+    debugLog('[PRINT] RECEIPT METRICS', JSON.stringify(metrics));
+    const layoutMetrics = await win.webContents.executeJavaScript(`
+  (() => {
+    const receipt = document.getElementById('receipt');
+    return {
+      receiptClientWidth: receipt?.clientWidth,
+      receiptScrollWidth: receipt?.scrollWidth,
+      receiptBoundingWidth: receipt?.getBoundingClientRect().width,
+      bodyClientWidth: document.body.clientWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth
+    };
+  })()
+`);
+
+debugLog('[PRINT] LAYOUT METRICS', JSON.stringify(layoutMetrics));
     const pxToMicrons = (px) => Math.max(352, Math.round(px * 25400 / 96));
-    // The DTP-220 printer is a 58mm thermal printer, so the paper width is fixed
-    // at 58mm (58000 microns). We never fall back to 80mm for this printer.
-    const pageWidthMicrons = 58000;
+    // The FIT FP-1000 printer uses 80mm paper, so the paper width is fixed at
+    // 80mm (80000 microns), derived from the single PAPER_WIDTH_MM constant.
+    const pageWidthMicrons = PAPER_WIDTH_MM * 1000;
     // Only a tiny (~2mm) safety pad; +8 CSS px @ 96dpi converts to ~2.1mm. We do
     // NOT add hundreds of pixels and we never use the window height here.
     const pageHeightMicrons = pxToMicrons(metrics.height + 8);
@@ -1176,7 +1199,7 @@ body {
     };
 
     // STEP 10: temporary diagnostic logging so the actual executed print values
-    // are visible for the DTP-220 (paperWidth=58mm, pageWidthMicrons=58000).
+    // are visible for the FIT FP-1000 (paperWidth=80mm, pageWidthMicrons=80000).
     console.log('[PRINT] paperWidth:', paperWidth);
     console.log('[PRINT] printerName:', printerName);
     console.log('[PRINT] receipt metrics:', metrics);
